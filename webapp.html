@@ -1,0 +1,1931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1R MSP Open Issue Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.29.0.min.js"></script>
+    <!-- Application Structure Plan:
+        This web app is designed as a dynamic, single-page dashboard.
+        1. Header: A friendly title for our tracker.
+        2. Quick Filters: Simple dropdowns for Priority, Status, Category, and Organization, plus a text search bar for descriptions and parts. Now includes an "Export to Excel" button.
+        3. Visual Snapshot (Charts): Three clear charts (Priority, Status, Category) give you a quick visual overview of your issues. Clicking on parts of these charts will filter the main table below, making it super interactive!
+        4. Daily Review Report: A new section displaying the top 10 open issues that are due today or overdue, prioritized by criticality. Now includes a refresh button and dropdowns for selecting the number of items and date range.
+        5. Email Reminder Section: New section to simulate sending email reminders for issues/subtasks to responsible parties.
+        6. Add New Issue Form: A new section with a button to toggle a form for adding new issues. This form captures all relevant issue details, NOW INCLUDING SUB-TASKS.
+        7. Tab Navigation: New tabs ('Issues List', 'Gantt Chart') to switch between different views of the issue data.
+        8. Detailed Issue Table: A sortable and searchable table showing all the key info for each issue. Now includes a toggle to expand/collapse sub-tasks directly within the table view, with sub-tasks formatted for better clarity. Clicking on any row (excluding the toggle) pops up a modal with all the juicy details.
+        9. Gantt Chart View: A new section to display issues as a timeline, showing start/end dates and status visually. Now includes a date dropdown for easy navigation AND a dropdown to select the timeline span (number of weeks/months). The left display area (Y-axis labels) is formatted for better readability, and the default timeline view is wider.
+        10. Issue Detail Modal: A pop-up window that shows every single field for a selected issue, including that awesome, detailed Action Log and now also lists associated Sub-tasks. This keeps the main view clean while letting you dive deep when you need to.
+        This structure is chosen to be super user-friendly: start with a big picture, then let users drill down into specifics with filters and detailed views, easily add new items AND edit existing ones, visualize timelines, and manage sub-tasks! It's all about making issue tracking easy and intuitive!
+    -->
+    <!-- Visualization & Content Choices:
+        - Report Info: Our "Open Issue Tracking Template" data. Goal: Make issue tracking fun and easy to understand!
+        - 1. Issues by Priority: Goal: Quickly see what's most urgent. Viz: Doughnut Chart. Interaction: Hover for counts, click to filter the table. Justification: Great for showing parts of a whole, visually striking. Library: Chart.js (Canvas).
+        - 2. Issues by Status: Goal: Understand where issues are in their lifecycle. Viz: Horizontal Bar Chart. Interaction: Hover for counts, click to filter the table. Justification: Perfect for comparing counts across different stages, and horizontal bars are easy to read with longer labels. Library: Chart.js (Canvas).
+        - 3. Issues by Category: Goal: Spot trends in issue types. Viz: Vertical Bar Chart. Interaction: Hover for counts, click to filter the table. Justification: Good for comparing different categories, simple and effective. Library: Chart.js (Canvas).
+        - 4. Daily Review Report: Goal: Provide a quick, actionable summary of critical open/overdue tasks. Viz: HTML List. Interaction: Click item to open detail modal. Now includes a refresh button and dropdowns for manual updates and date range filtering. Justification: Fast consumption of key daily actions with customizable view. Library: HTML/Tailwind/JS.
+        - 5. Main Issues Table: Goal: Provide a comprehensive, searchable list of all issues. Viz: HTML Table. Interaction: Filter by dropdowns/search, sort by clicking headers, click row for details, toggle sub-task visibility. Now with improved inline sub-task display. Justification: The best way to present detailed tabular data with lots of interactive options, now with clearer inline sub-task expansion. Library: HTML/Tailwind/JS.
+        - 6. Gantt Chart: Goal: Visualize issue timelines and progress. Viz: Gantt Chart. Interaction: Zoom, pan, hover for details, jump to specific dates, and now adjust timeline span. The Y-axis labels are improved for clarity to include the assigned person. Note: Sub-tasks are NOT individually represented on this Gantt chart in this version. Justification: Excellent for project scheduling and tracking main task durations, now with enhanced navigation and view control. Library: Plotly.js (Canvas/WebGL).
+        - 7. Issue Detail Modal: Goal: Show all the info for one specific issue. Viz: Structured text and lists. Interaction: Read-only, close button, and now an "Edit" button to modify the issue. Now includes a clear display of associated sub-tasks. Justification: Keeps the main table clean while providing deep dives into individual issues, especially for the long Action Log and sub-task details, and allows for direct modification. Library: HTML/Tailwind/JS.
+        - 8. Export to Excel: Goal: Provide a downloadable snapshot of all data. Viz: Button triggering CSV download. Interaction: Click to download. Justification: Enables offline analysis and data backup. Library: HTML/JS.
+        - 9. Email Reminder: Goal: Simulate sending email reminders for issues/subtasks. Viz: Form with inputs for recipient and time, and a display area for simulated email content. Interaction: Fill form, click button to trigger simulation. Justification: Demonstrates potential for automated communication. Library: HTML/JS.
+    -->
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .chart-container { position: relative; width: 100%; max-width: 500px; margin-left: auto; margin-right: auto; height: 300px; max-height: 350px; }
+        @media (min-width: 768px) { .chart-container { height: 320px; } }
+        .table-cell-truncate { max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .modal { display: none; }
+        .modal.active { display: flex; }
+        .filter-dropdown { min-width: 150px; }
+        .priority-high { background-color: #FECACA; color: #991B1B; } /* red-200, red-700 */
+        .priority-medium { background-color: #FEF3C7; color: #92400E; } /* amber-200, amber-700 */
+        .priority-low { background-color: #DBEAFE; color: #1E40AF; } /* blue-200, blue-700 */
+        .status-closed { background-color: #D1FAE5; color: #065F46; } /* green-200, green-700 */
+        .status-wip { background-color: #FEF9C3; color: #92400E; } /* yellow-200, amber-700 */
+        .status-open { background-color: #FFEDD5; color: #9A3412; } /* orange-200, orange-700 */
+        .status-onhold { background-color: #E5E7EB; color: #374151; } /* gray-200, gray-700 */
+        .status-pending-verification { background-color: #BFDBFE; color: #1D4ED8; } /* blue-300, blue-700 */
+        .table th { cursor: pointer; }
+        .table th .sort-icon { margin-left: 4px; font-size: 0.8em; display: inline-block; width: 1em; text-align: center;}
+        .form-section { display: none; }
+        .form-section.active { display: block; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        #ganttChartContainer { width: 100%; height: 600px; } /* Fixed height for Plotly chart */
+        @media (max-width: 768px) {
+            #ganttChartContainer { height: 400px; } /* Adjust height for smaller screens */
+        }
+        /* Styles for subtask rows in the main table */
+        .subtask-detail-row {
+            background-color: #f8fafc; /* slate-50 */
+            border-bottom: 1px solid #e2e8f0; /* slate-200 */
+        }
+        .subtask-detail-row td {
+            padding-left: 3rem; /* Indent subtasks */
+            padding-top: 0.5rem;
+            padding-bottom: 0.5rem;
+            font-size: 0.875rem; /* text-sm */
+            color: #475569; /* slate-600 */
+        }
+        .subtask-detail-row ul {
+            list-style: none; /* Remove default list bullets */
+            padding: 0;
+            margin: 0;
+        }
+        .subtask-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); /* Responsive columns */
+            gap: 0.75rem; /* gap-3 */
+        }
+        .subtask-card {
+            background-color: #ffffff; /* white */
+            padding: 0.75rem; /* p-3 */
+            border-radius: 0.5rem; /* rounded-md */
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
+            border: 1px solid #e2e8f0; /* border-slate-200 */
+        }
+        .subtask-card p {
+            margin-bottom: 0.25rem; /* space-y-1 */
+        }
+        .subtask-card p:last-child {
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+        <header class="mb-8 text-center">
+            <h1 class="text-4xl font-bold text-slate-700">1R MSP Open Issue Tracker</h1>
+            <p class="text-slate-600 mt-2">Keep tabs on all your project issues, super organized and simple!</p>
+        </header>
+
+        <section id="filters" class="mb-8 p-6 bg-white rounded-lg shadow-md">
+            <h2 class="text-2xl font-semibold text-slate-700 mb-4">Quick Filters!</h2>
+            <p class="text-slate-600 mb-6">Use these filters to quickly find what you're looking for. Psst... you can click on the charts below to filter too!</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 items-end">
+                <div>
+                    <label for="priorityFilter" class="block text-sm font-medium text-slate-700">Priority</label>
+                    <select id="priorityFilter" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm rounded-md filter-dropdown">
+                        <option value="">All</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="statusFilter" class="block text-sm font-medium text-slate-700">Status</label>
+                    <select id="statusFilter" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm rounded-md filter-dropdown">
+                        <option value="">All</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="categoryFilter" class="block text-sm font-medium text-slate-700">Category</label>
+                    <select id="categoryFilter" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm rounded-md filter-dropdown">
+                        <option value="">All</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="organizationFilter" class="block text-sm font-medium text-slate-700">Organization</label>
+                    <select id="organizationFilter" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm rounded-md filter-dropdown">
+                        <option value="">All</option>
+                    </select>
+                </div>
+                <div class="lg:col-span-1 xl:col-span-1">
+                    <label for="searchInput" class="block text-sm font-medium text-slate-700">Search Description/Parts</label>
+                    <input type="text" id="searchInput" placeholder="Search for task or part..." class="mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm">
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end space-x-4">
+                <button id="exportToExcelBtn" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out">
+                    Export All Data to Excel
+                </button>
+            </div>
+        </section>
+
+        <section id="charts" class="mb-8">
+            <h2 class="text-2xl font-semibold text-slate-700 mb-6">Your Issues at a Glance!</h2>
+             <p class="text-slate-600 mb-6">Here's a quick visual summary of your issues. Click on any part of the charts to filter the big list below!</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h3 class="text-lg font-medium text-slate-700 mb-3 text-center">Issues by Priority</h3>
+                    <div class="chart-container">
+                        <canvas id="priorityChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h3 class="text-lg font-medium text-slate-700 mb-3 text-center">Issues by Status</h3>
+                    <div class="chart-container">
+                        <canvas id="statusChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h3 class="text-lg font-medium text-slate-700 mb-3 text-center">Issues by Category</h3>
+                    <div class="chart-container">
+                        <canvas id="categoryChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="dailyReviewReportSection" class="mb-8 p-6 bg-white rounded-lg shadow-md">
+            <h2 class="text-2xl font-semibold text-slate-700 mb-4">Daily Review Report: Top <span id="reportLimitDisplay">10</span> Action Items!</h2>
+            <p class="text-slate-600 mb-6">Here are the top <span id="reportLimitDescription">10</span> open issues and tasks that are <span id="reportDateRangeDescription">due today or overdue</span>, prioritized by urgency. Time to get cracking!</p>
+            <div class="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-4 mb-4">
+                <div class="flex items-center space-x-2">
+                    <label for="reportLimitSelector" class="block text-sm font-medium text-slate-700">Show Top:</label>
+                    <select id="reportLimitSelector" class="mt-1 block w-auto pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm rounded-md">
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                        <option value="8">8</option>
+                        <option value="9">9</option>
+                        <option value="10" selected>10</option>
+                    </select>
+                </div>
+                <div class="flex items-center space-x-2 mt-2 sm:mt-0">
+                    <label for="reportDateRangeSelector" class="block text-sm font-medium text-slate-700">Due Date Range:</label>
+                    <select id="reportDateRangeSelector" class="mt-1 block w-auto pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm rounded-md">
+                        <option value="overdue_today" selected>Overdue & Today</option>
+                        <option value="next_7_days">Next 7 Days</option>
+                        <option value="next_14_days">Next 14 Days</option>
+                        <option value="last_7_days">Last 7 Days</option>
+                    </select>
+                </div>
+                <div class="text-right sm:ml-auto">
+                    <button id="refreshDailyReportBtn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-1 px-3 rounded-lg shadow-md transition duration-300 ease-in-out text-sm">
+                        Refresh Report
+                    </button>
+                </div>
+            </div>
+            <div id="dailyReviewReportContent" class="space-y-3">
+                </div>
+            <div id="noDailyReviewResults" class="text-center py-4 text-slate-500" style="display: none;">
+                Woohoo! No high-priority open issues due today or overdue. Keep up the great work!
+            </div>
+        </section>
+
+        <section id="emailReminderSection" class="mb-8 p-6 bg-white rounded-lg shadow-md">
+            <h2 class="text-2xl font-semibold text-slate-700 mb-4">Email Reminders (Simulated)!</h2>
+            <p class="text-slate-600 mb-6">Schedule a reminder for responsible parties about their open issues and sub-tasks. **Note: This is a simulation; actual emails are not sent.**</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end mb-4">
+                <div>
+                    <label for="reminderRecipient" class="block text-sm font-medium text-slate-700">Send Reminder To:</label>
+                    <select id="reminderRecipient" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm rounded-md">
+                        <option value="all">All Responsible Parties</option>
+                        </select>
+                </div>
+                <div>
+                    <label for="reminderTime" class="block text-sm font-medium text-slate-700">Send At Time:</label>
+                    <input type="time" id="reminderTime" class="mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" value="09:00">
+                </div>
+                <div>
+                    <button id="scheduleReminderBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out">
+                        Schedule Reminder
+                    </button>
+                </div>
+            </div>
+            <div id="simulatedEmailOutput" class="mt-6 p-4 bg-slate-50 border border-slate-200 rounded-md hidden">
+                <h4 class="font-semibold text-slate-800 mb-2">Simulated Email Sent!</h4>
+                <p class="text-sm text-slate-700 mb-1"><strong>To:</strong> <span id="simulatedEmailTo"></span></p>
+                <p class="text-sm text-slate-700 mb-1"><strong>Subject:</strong> <span id="simulatedEmailSubject"></span></p>
+                <p class="text-sm text-slate-700"><strong>Body:</strong></p>
+                <div id="simulatedEmailBody" class="text-xs text-slate-600 whitespace-pre-wrap p-2 bg-white rounded border border-slate-200"></div>
+                <p class="text-xs text-slate-500 mt-2">*(This email was simulated. In a real application, a backend service would send it.)*</p>
+            </div>
+        </section>
+
+        <section id="addIssueSection" class="mb-8 p-6 bg-white rounded-lg shadow-md">
+            <h2 class="text-2xl font-semibold text-slate-700 mb-4">Wanna Add or Edit an Issue?</h2>
+            <p class="text-slate-600 mb-6">Click "Add New Issue!" to create a fresh one, or use the "Edit Issue" button in the detail view to update an existing one!</p>
+            <button id="toggleAddIssueForm" class="bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out">
+                Add New Issue!
+            </button>
+
+            <form id="addIssueForm" class="form-section mt-6 p-6 border border-slate-200 rounded-lg bg-slate-50">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="newIssueID" class="block text-sm font-medium text-slate-700">Issue ID</label>
+                        <input type="number" id="newIssueID" class="mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md shadow-sm bg-slate-100 cursor-not-allowed" readonly>
+                    </div>
+                    <div>
+                        <label for="newPriority" class="block text-sm font-medium text-slate-700">Priority <span class="text-red-500">*</span></label>
+                        <select id="newPriority" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm rounded-md" required>
+                            <option value="">Select Priority</option>
+                            <option value="High">High</option>
+                            <option value="Medium">Medium</option>
+                            <option value="Low">Low</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="newApplicableParts" class="block text-sm font-medium text-slate-700">Applicable Part(s)</label>
+                        <input type="text" id="newApplicableParts" class="mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="e.g., Front Bumper, Software Module A">
+                    </div>
+                    <div>
+                        <label for="newOrganization" class="block text-sm font-medium text-slate-700">Organization <span class="text-red-500">*</span></label>
+                        <select id="newOrganization" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm rounded-md" required>
+                            <option value="">Select Organization</option>
+                            <option value="Camaco">Camaco</option>
+                            <option value="Rivian">Rivian</option>
+                            <option value="SupplierX">SupplierX</option>
+                            <option value="Internal Dev Team">Internal Dev Team</option>
+                            <option value="Manufacturing">Manufacturing</option>
+                            <option value="Quality">Quality</option>
+                            <option value="Engineering Team">Engineering Team</option>
+                            <option value="Test Team">Test Team</option>
+                            <option value="Production Lead">Production Lead</option>
+                            <option value="Electrical Eng.">Electrical Eng.</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="newCategory" class="block text-sm font-medium text-slate-700">Category <span class="text-red-500">*</span></label>
+                        <select id="newCategory" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm rounded-md" required>
+                            <option value="">Select Category</option>
+                            <option value="Program">Program</option>
+                            <option value="Quality">Quality</option>
+                            <option value="Testing">Testing</option>
+                            <option value="Engineering">Engineering</option>
+                            <option value="Manufacturing">Manufacturing</option>
+                            <option value="DV Build">DV Build</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="newDateOpened" class="block text-sm font-medium text-slate-700">Date Opened <span class="text-red-500">*</span></label>
+                        <input type="date" id="newDateOpened" class="mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" required>
+                    </div>
+                    <div>
+                        <label for="newResponsibleParty" class="block text-sm font-medium text-slate-700">Responsible Party <span class="text-red-500">*</span></label>
+                        <input type="text" id="newResponsibleParty" class="mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="e.g., John Doe, Team Alpha" required>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label for="newTaskDescription" class="block text-sm font-medium text-slate-700">Task Description <span class="text-red-500">*</span></label>
+                        <textarea id="newTaskDescription" rows="3" class="mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="Describe the issue or task here..." required></textarea>
+                    </div>
+                    <div>
+                        <label for="newTargetDate" class="block text-sm font-medium text-slate-700">Target Date</label>
+                        <input type="date" id="newTargetDate" class="mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm">
+                    </div>
+                    <div>
+                        <label for="newActualClosureDate" class="block text-sm font-medium text-slate-700">Actual Closure Date</label>
+                        <input type="date" id="newActualClosureDate" class="mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm">
+                    </div>
+                    <div>
+                        <label for="newStatus" class="block text-sm font-medium text-slate-700">Status <span class="text-red-500">*</span></label>
+                        <select id="newStatus" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm rounded-md" required>
+                            <option value="">Select Status</option>
+                            <option value="Open">Open</option>
+                            <option value="WIP">WIP</option>
+                            <option value="On Hold">On Hold</option>
+                            <option value="Pending Verification">Pending Verification</option>
+                            <option value="Closed">Closed</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="newSupportingDocLink" class="block text-sm font-medium text-slate-700">Supporting Doc/Image Link</label>
+                        <input type="url" id="newSupportingDocLink" class="mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="e.g., https://example.com/doc.pdf">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label for="newRootCause" class="block text-sm font-medium text-slate-700">Root Cause</label>
+                        <textarea id="newRootCause" rows="2" class="mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="What's the core reason for this issue?"></textarea>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label for="newCorrectiveAction" class="block text-sm font-medium text-slate-700">Corrective Action</label>
+                        <textarea id="newCorrectiveAction" rows="2" class="mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="What did you do to fix it?"></textarea>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label for="newPreventiveAction" class="block text-sm font-medium text-slate-700">Preventive Action</label>
+                        <textarea id="newPreventiveAction" rows="2" class="mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="How will you stop this from happening again?"></textarea>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label for="issueActionLogHistory" class="block text-sm font-medium text-slate-700">Issue Action Log History</label>
+                        <textarea id="issueActionLogHistory" class="mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md shadow-sm bg-slate-100 cursor-not-allowed" rows="4" readonly></textarea>
+                    </div>
+                    <div class="md:col-span-2 mt-2 p-3 border border-slate-300 rounded-md bg-slate-50">
+                        <h5 class="text-sm font-semibold mb-2">Add New Issue Log Entry:</h5>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-700">Date</label>
+                                <input type="date" id="newIssueLogDate" class="mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md text-sm" value="${new Date().toISOString().split('T')[0]}">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-700">Updated By</label>
+                                <select id="newIssueLogUpdater" class="mt-1 block w-full pl-3 pr-10 py-2 text-sm border-slate-300 rounded-md">
+                                    <option value="">Select Updater</option>
+                                </select>
+                            </div>
+                            <div class="md:col-span-1">
+                                <label class="block text-xs font-medium text-slate-700">Comment</label>
+                                <textarea id="newIssueLogComment" class="mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md text-sm" rows="1" placeholder="New comment..."></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="md:col-span-2 mt-6 border-t border-slate-200 pt-6">
+                        <h3 class="text-lg font-semibold text-slate-700 mb-3">Sub-tasks</h3>
+                        <div id="subtasksContainer" class="space-y-4">
+                            </div>
+                        <button type="button" id="addSubtaskBtn" class="mt-4 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out text-sm">
+                            Add Sub-task
+                        </button>
+                    </div>
+                </div>
+                <div class="flex justify-between items-center mt-6">
+                    <div class="flex space-x-2">
+                        <button type="button" id="prevIssueBtn" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">
+                            Previous Issue
+                        </button>
+                        <button type="button" id="nextIssueBtn" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">
+                            Next Issue
+                        </button>
+                    </div>
+                    <div class="flex space-x-4">
+                        <button type="button" id="cancelAddIssue" class="bg-slate-300 hover:bg-slate-400 text-slate-800 font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out">
+                            Cancel
+                        </button>
+                        <button type="submit" id="saveOrUpdateIssueBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out">
+                            Save Issue!
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </section>
+
+        <div class="mb-8 flex justify-center space-x-4">
+            <button id="showIssuesListBtn" class="px-6 py-3 rounded-lg font-semibold text-lg bg-blue-600 text-white shadow-md hover:bg-blue-700 transition duration-300">Issues List</button>
+            <button id="showGanttChartBtn" class="px-6 py-3 rounded-lg font-semibold text-lg bg-slate-300 text-slate-800 shadow-md hover:bg-slate-400 transition duration-300">Gantt Chart</button>
+        </div>
+
+        <section id="issuesTableSection" class="tab-content active bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-2xl font-semibold text-slate-700 mb-4">Detailed Issues List - Dive In!</h2>
+            <p class="text-slate-600 mb-6">Here's the full list of issues. Click on any column header to sort, click on any row to see all the details, or click the <span class="font-bold text-lg">+</span> button to expand sub-tasks!</p>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-slate-200 table-auto">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider"></th> <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider" data-sort="Issue ID">ID <span class="sort-icon"></span></th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider" data-sort="Priority">Priority <span class="sort-icon"></span></th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider" data-sort="Task Description">Description <span class="sort-icon"></span></th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider" data-sort="Status">Status <span class="sort-icon"></span></th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider" data-sort="Responsible Party">Responsible <span class="sort-icon"></span></th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider" data-sort="Date Opened">Opened <span class="sort-icon"></span></th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider" data-sort="Target Date">Target Date <span class="sort-icon"></span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="issuesTableBody" class="bg-white divide-y divide-slate-200">
+                        </tbody>
+                </table>
+            </div>
+            <div id="noResults" class="text-center py-8 text-slate-500" style="display: none;">
+                Bummer! No issues found matching your filters. Try adjusting them!
+            </div>
+        </section>
+
+        <section id="ganttChartSection" class="tab-content bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-2xl font-semibold text-slate-700 mb-4">Issue Timeline - Gantt Chart!</h2>
+            <p class="text-slate-600 mb-6">See your issues laid out on a timeline. Each bar shows the duration of a task, colored by its current status!</p>
+            <div class="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-4 mb-4">
+                <div class="flex items-center space-x-2">
+                    <label for="ganttDateSelector" class="block text-sm font-medium text-slate-700">Jump to Date:</label>
+                    <select id="ganttDateSelector" class="mt-1 block w-auto pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm rounded-md">
+                        <option value="today">Today</option>
+                        <option value="yesterday">Yesterday</option>
+                        <option value="tomorrow">Tomorrow</option>
+                        <option value="custom">Custom Date</option>
+                    </select>
+                    <input type="date" id="ganttCustomDateInput" class="mt-1 block w-auto pl-3 pr-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm hidden">
+                    <button id="ganttGoDateBtn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out hidden">Go</button>
+                </div>
+                <div class="flex items-center space-x-2 mt-2 sm:mt-0">
+                    <label for="ganttTimeSpanSelector" class="block text-sm font-medium text-slate-700">Show Timeline For:</label>
+                    <select id="ganttTimeSpanSelector" class="mt-1 block w-auto pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm rounded-md">
+                        <option value="1">1 Week</option>
+                        <option value="2">2 Weeks</option>
+                        <option value="4">1 Month</option>
+                        <option value="12" selected>3 Months</option>
+                        <option value="24">6 Months</option>
+                        <option value="52">1 Year</option>
+                    </select>
+                </div>
+            </div>
+            <div id="ganttChartContainer"></div>
+            <div id="noGanttResults" class="text-center py-8 text-slate-500" style="display: none;">
+                No issues with valid dates found for the Gantt chart.
+            </div>
+        </section>
+    </div>
+
+    <div id="issueModal" class="modal fixed inset-0 bg-slate-600 bg-opacity50 overflow-y-auto h-full w-full items-center justify-center p-4">
+        <div class="relative bg-white rounded-lg shadow-xl w-full max-w-2xl mx-auto my-8">
+            <div class="flex justify-between items-center p-5 border-b border-slate-200 rounded-t">
+                <h3 class="text-xl font-semibold text-slate-900" id="modalTitle">Issue Details</h3>
+                <button type="button" class="text-slate-400 bg-transparent hover:bg-slate-200 hover:text-slate-900 rounded-lg text-sm p-1.5 ml-auto inline-flex items-center" id="closeModal">
+                    <svg aria-hidden="true" class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path></svg>
+                    <span class="sr-only">Close modal</span>
+                </button>
+            </div>
+            <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                <div id="modalContent" class="text-sm text-slate-700"></div>
+            </div>
+            <div class="flex items-center justify-end p-4 border-t border-slate-200 rounded-b">
+                <button type="button" id="editIssueBtn" class="text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center mr-2">Edit Issue</button>
+                <button type="button" id="closeModalFooter" class="text-white bg-sky-600 hover:bg-sky-700 focus:ring-4 focus:outline-none focus:ring-sky-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center">Got it!</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Apps Script Web App URL ---
+        // IMPORTANT: REPLACE THIS WITH YOUR DEPLOYED GOOGLE APPS SCRIPT WEB APP URL
+        const APPS_SCRIPT_URL = https://script.google.com/a/macros/rivian.com/s/AKfycbzw7e-E_0fvYMOcAD1FExfsIUwTYJt5uOw5iKqL_IcuV0VVrdwslZxjrKrb7n5PRlkvuw/exec; 
+
+        // --- Dummy Data Generation Functions (for initial load if sheet is empty) ---
+        function getRandomDate(start, end) {
+            const date = new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
+            return date.toISOString().split('T')[0];
+        }
+
+        function getRandomElement(arr) {
+            return arr[Math.floor(Math.random() * arr.length)];
+        }
+
+        function generateDummyIssues(numIssues, numSubtasksPerIssue) {
+            const dummyIssues = [];
+            const priorities = ['High', 'Medium', 'Low'];
+            const organizations = ['Camaco', 'Rivian', 'SupplierX', 'Internal Dev Team', 'Manufacturing', 'Quality', 'Engineering Team', 'Test Team', 'Production Lead', 'Electrical Eng.'];
+            const categories = ['Program', 'Quality', 'Testing', 'Engineering', 'Manufacturing', 'DV Build'];
+            const responsibleParties = ['Rick', 'Carlos', 'Sagar', 'Jon', 'Maria', 'David', 'Sarah', 'John', 'Enrique', 'Project Manager', 'Test Team Lead', 'Assembly Team'];
+            const statuses = ['Open', 'WIP', 'On Hold', 'Pending Verification', 'Closed'];
+            const partNames = ['Headrest', 'Part ID Labels', 'Gear Sector', 'Software Module A', 'Front Bumper', 'Battery Pack', 'Seat Structure', 'Wiring Harness', 'Control Unit', 'Brake Assembly'];
+
+            let currentMaxIssueId = 0;
+            // Find the maximum existing Issue ID to ensure uniqueness
+            // This is safer as issuesData might not be fully initialized yet when called from global scope
+            if (window.issuesData && window.issuesData.length > 0) {
+                currentMaxIssueId = Math.max(...window.issuesData.map(issue => issue["Issue ID"]));
+            }
+
+            for (let i = 0; i < numIssues; i++) {
+                const issueId = currentMaxIssueId + i + 1; // Start new IDs from currentMaxIssueId + 1
+                const dateOpened = getRandomDate(new Date(2024, 0, 1), new Date());
+                const targetDate = getRandomDate(new Date(dateOpened), new Date(new Date(dateOpened).setDate(new Date(dateOpened).getDate() + 90)));
+                let actualClosureDate = '';
+                let status = getRandomElement(statuses);
+
+                if (status === 'Closed') {
+                    actualClosureDate = getRandomDate(new Date(dateOpened), new Date());
+                    if (new Date(actualClosureDate) < new Date(dateOpened)) { // Ensure closure date is after opened date
+                        actualClosureDate = getRandomDate(new Date(dateOpened), new Date(new Date(dateOpened).setDate(new Date(dateOpened).getDate() + 30)));
+                    }
+                } else if (new Date(targetDate) < new Date()) {
+                    // If target date is in the past and not closed, make it WIP or On Hold
+                    status = getRandomElement(['WIP', 'On Hold', 'Open']);
+                }
+
+                const responsibleParty = getRandomElement(responsibleParties);
+                const taskDescription = `Investigate issue with ${getRandomElement(partNames)} due to ${getRandomElement(['material defect', 'design flaw', 'assembly error', 'software bug', 'testing failure'])}.`;
+                const actionLog = `${dateOpened} - ${responsibleParty} - Initial Entry: Issue created regarding ${taskDescription.toLowerCase()}.`;
+
+                const subtasks = [];
+                for (let j = 0; j < numSubtasksPerIssue; j++) {
+                    const subtaskStartDate = getRandomDate(new Date(dateOpened), new Date(targetDate));
+                    const subtaskTargetDate = getRandomDate(new Date(subtaskStartDate), new Date(new Date(subtaskStartDate).setDate(new Date(subtaskStartDate).getDate() + 30)));
+                    const subtaskStatus = getRandomElement(statuses);
+                    const subtaskAssignedTo = getRandomElement(responsibleParties);
+                    const subtaskActionLog = `${subtaskStartDate} - ${subtaskAssignedTo} - Progress: Started work on sub-task ${j + 1}.`;
+
+                    subtasks.push({
+                        ID: `${issueId}.${j + 1}`,
+                        Description: `Sub-task ${j + 1}: ${getRandomElement(['Diagnose root cause', 'Develop fix', 'Test solution', 'Document findings', 'Coordinate with supplier'])} for ${getRandomElement(partNames)}.`,
+                        AssignedTo: subtaskAssignedTo,
+                        StartDate: subtaskStartDate,
+                        TargetDate: subtaskTargetDate,
+                        Status: subtaskStatus,
+                        "Action Log": subtaskActionLog
+                    });
+                }
+
+                dummyIssues.push({
+                    "Issue ID": issueId,
+                    "Priority": getRandomElement(priorities),
+                    "Applicable Part(s)": getRandomElement(partNames),
+                    "Organization": getRandomElement(organizations),
+                    "Category": getRandomElement(categories),
+                    "Date Opened": dateOpened,
+                    "Task Description": taskDescription,
+                    "Responsible Party": responsibleParty,
+                    "Action Log": actionLog,
+                    "Target Date": targetDate,
+                    "Actual Closure Date": actualClosureDate,
+                    "Status": status,
+                    "Supporting Documentation/Image Link": Math.random() > 0.7 ? `https://placehold.co/150x100/aabbcc/000000?text=Doc${issueId}` : '',
+                    "Root Cause": "Dummy root cause for Issue " + issueId,
+                    "Corrective Action": "Dummy corrective action for Issue " + issueId,
+                    "Preventive Action": "Dummy preventive action for Issue " + issueId,
+                    "Subtasks": subtasks
+                });
+            }
+            return dummyIssues;
+        }
+
+        // Our super awesome issue data!
+        // This will be populated from Google Sheet on load.
+        // Keeping a few initial entries for clarity if sheet is empty.
+        let issuesData = [
+            { "Issue ID": 1, "Priority": "High", "Applicable Part(s)": "Headrest", "Organization": "Camaco", "Category": "Program", "Date Opened": "2025-01-06", "Task Description": "Head rest rods need welding at Camaco Lorain", "Responsible Party": "Rick / Carlos", "Action Log": "2025-01-06 - Rick - Update: HR rods should be here by 01/09.\\n2025-01-09 - Carlos - Action: HR rods are here!\\n2025-01-17 - Rick - Action: Welding's done.\\n2025-04-06 - Carlos - Status: Part's at Rivian.", "Target Date": "2025-04-30", "Actual Closure Date": "2025-04-06", "Status": "Closed", "Supporting Documentation/Image Link": "", "Root Cause": "Welding process inconsistent", "Corrective Action": "Re-calibrated welding machine", "Preventive Action": "Implement daily machine calibration check", "Subtasks": [] },
+            { "Issue ID": 2, "Priority": "Medium", "Applicable Part(s)": "Part ID lables", "Organization": "Rivian", "Category": "Quality", "Date Opened": "2025-01-22", "Task Description": "Part ID lables are missing on the parts", "Responsible Party": "Sagar", "Action Log": "2025-01-22 - Sagar - Action: Labels ordered. Should be here 01/29.\\n2025-01-30 - Sagar - Action: Labels arrived and we put 'em on.", "Target Date": "2025-02-15", "Actual Closure Date": "2025-01-30", "Status": "Closed", "Supporting Documentation/Image Link": "", "Root Cause": "Supplier messed up the packaging", "Corrective Action": "Manual application of labels", "Preventive Action": "Update supplier contract to include label requirement", "Subtasks": [] },
+            { "Issue ID": 3, "Priority": "Medium", "Applicable Part(s)": "Head rest rod", "Organization": "Camaco", "Category": "Engineering", "Date Opened": "2025-02-01", "Task Description": "Bend radii on the head rest rod aren't right, not like the drawing", "Responsible Party": "Jon", "Action Log": "2025-02-01 - Jon - Found it: Saw this during inspection. Camaco's checking it out.\\n2025-02-05 - Jon - Update: Camaco says it's off. They want to use it as-is.\\n2025-02-10 - Jon - Status: Rivian engineering's looking at it.\\n2025-03-01 - Jon - Decision: Deviation approved for this build. Need to update the drawing for next time.", "Target Date": "2025-03-15", "Actual Closure Date": "", "Status": "On Hold", "Supporting Documentation/Image Link": "", "Root Cause": "Drawing was wrong", "Corrective Action": "Approved deviation for current build", "Preventive Action": "Revise drawing and communicate to supplier", "Subtasks": [
+                { "ID": "3.1", "Description": "Review drawing specs", "AssignedTo": "Jon", "StartDate": "2025-02-01", "TargetDate": "2025-02-03", "Status": "Closed", "Action Log": "2025-02-01 - Jon - Reviewed drawing specs; confirmed deviation." },
+                { "ID": "3.2", "Description": "Coordinate with Camaco on deviation", "AssignedTo": "Jon", "StartDate": "2025-02-04", "TargetDate": "2025-02-06", "Status": "Closed", "Action Log": "2025-02-04 - Jon - Discussed deviation with Camaco; they agree to use as-is." },
+                { "ID": "3.3", "Description": "Get Rivian engineering approval", "AssignedTo": "Jon", "StartDate": "2025-02-07", "TargetDate": "2025-02-10", "Status": "Pending Verification", "Action Log": "2025-02-07 - Jon - Submitted deviation for Rivian engineering approval. Awaiting feedback." }
+            ] },
+            { "Issue ID": 8, "Priority": "High", "Applicable Part(s)": "Gear Sector", "Organization": "SupplierX", "Category": "Testing", "Date Opened": "2025-03-10", "Task Description": "Gear Sector broke during DV testing!", "Responsible Party": "Maria / David", "Action Log": "2025-03-10 - Maria - Found it: Broke at 50k cycles. Test stopped.\\n2025-03-15 - David - Analysis: Looks like a material defect. SupplierX is investigating.\\n2025-03-20 - Maria - Update: SupplierX confirmed defect. Waiting for their fix plan!", "Target Date": "2025-04-20", "Actual Closure Date": "", "Status": "WIP", "Supporting Documentation/Image Link": "Link to test report", "Root Cause": "Material defect from supplier", "Corrective Action": "Waiting for SupplierX to tell us how they'll fix it.", "Preventive Action": "We'll start checking materials when they come in for important parts!", "Subtasks": [
+                { "ID": "8.1", "Description": "Perform initial failure analysis", "AssignedTo": "David", "StartDate": "2025-03-10", "TargetDate": "2025-03-14", "Status": "Closed", "Action Log": "2025-03-10 - David - Initial analysis complete; suspected material defect." },
+                { "ID": "8.2", "Description": "Communicate with SupplierX", "AssignedTo": "Maria", "StartDate": "2025-03-15", "TargetDate": "2025-03-17", "Status": "WIP", "Action Log": "2025-03-15 - Maria - Contacted SupplierX; awaiting their internal investigation results." },
+                { "ID": "8.3", "Description": "Review SupplierX CAP", "AssignedTo": "Maria", "StartDate": "2025-03-25", "TargetDate": "2025-03-28", "Status": "Open", "Action Log": "2025-03-25 - Maria - Received preliminary CAP from SupplierX. Need to review and approve." }
+            ] },
+            { "Issue ID": 12, "Priority": "Low", "Applicable Part(s)": "Software Module A", "Organization": "Internal Dev Team", "Category": "Program", "Date Opened": "2025-03-25", "Task Description": "Minor UI glitch on login screen.", "Responsible Party": "Sarah", "Action Log": "2025-03-25 - Sarah - Action: Logged bug. Added to backlog.\\n2025-04-01 - Sarah - Update: Dev team will pick it up next sprint.", "Target Date": "2025-04-15", "Actual Closure Date": "", "Status": "Open", "Supporting Documentation/Image Link": "Link to Jira ticket", "Root Cause": "Small coding error", "Corrective Action": "Will be fixed in next software update", "Preventive Action": "Improved code review process for UI elements", "Subtasks": [] },
+            { "Issue ID": 15, "Priority": "Medium", "Applicable Part(s)": "Front Bumper", "Organization": "Manufacturing", "Category": "Manufacturing", "Date Opened": "2025-04-05", "Task Description": "Small cosmetic scratch on front bumper during assembly.", "Responsible Party": "Production Lead", "Action Log": "2025-04-05 - Production Lead - Observation: Scratch identified. Rework initiated.\\n2025-04-06 - Production Lead - Action: Bumper sent for touch-up.", "Target Date": "2025-04-10", "Actual Closure Date": "2025-04-08", "Status": "Pending Verification", "Supporting Documentation/Image Link": "Photo of scratch", "Root Cause": "Handling error on assembly line", "Corrective Action": "Reworked bumper", "Preventive Action": "Re-train assembly staff on careful handling", "Subtasks": [] },
+            { "Issue ID": 19, "Priority": "High", "Applicable Part(s)": "Battery Pack", "Organization": "Quality", "Category": "Quality", "Date Opened": "2025-04-20", "Task Description": "Battery pack showing inconsistent voltage readings.", "Responsible Party": "Electrical Eng.", "Action Log": "2025-04-20 - Electrical Eng. - Action: Pulled unit for detailed analysis.\\n2025-04-22 - Electrical Eng. - Analysis: Found faulty cell. Supplier notified.", "Target Date": "2025-05-05", "Actual Closure Date": "", "Status": "WIP", "Supporting Documentation/Image Link": "Test data log", "Root Cause": "Defective battery cell from supplier", "Corrective Action": "Replacing faulty cell", "Preventive Action": "Implementing stricter incoming inspection for battery cells", "Subtasks": [] }
+        ];
+
+        // Add 95 more dummy issues to make it 100
+        issuesData = issuesData.concat(generateDummyIssues(95, 5));
+
+
+        let priorityChartInstance, statusChartInstance, categoryChartInstance;
+        let currentFilters = { priority: '', status: '', category: '', organization: '', search: '' };
+        let sortState = { column: 'Issue ID', direction: 'asc' }; // Default sort by Issue ID
+        let isEditing = false; // Flag to know if we're in edit mode
+        let editingIssueId = null; // Stores the ID of the issue being edited
+        let currentIndexInEdit = -1; // Stores the index of the issue being edited within displayedIssues
+        let displayedIssues = []; // Global array to store the currently filtered and sorted issues
+        let currentActiveTab = 'issuesTableSection'; // Keep track of the active tab
+        let ganttFocusDate = null; // Stores the date the Gantt chart is currently centered on
+        let ganttTimeSpanWeeks = 12; // Default Gantt chart time span (3 months)
+        let reportLimit = 10; // Default for daily review report
+        let reportDateRange = 'overdue_today'; // Default for daily review report
+
+        // Colors for our charts and table tags!
+        const priorityColors = { High: 'rgba(239, 68, 68, 0.7)', Medium: 'rgba(245, 158, 11, 0.7)', Low: 'rgba(59, 130, 246, 0.7)' };
+        const priorityBorderColors = { High: 'rgba(239, 68, 68, 1)', Medium: 'rgba(245, 158, 11, 1)', Low: 'rgba(59, 130, 246, 1)' };
+        
+        const statusColors = {
+            Closed: 'rgba(16, 185, 129, 0.7)', // Green
+            WIP: 'rgba(234, 179, 8, 0.7)',      // Amber/Yellow
+            Open: 'rgba(249, 115, 22, 0.7)',    // Orange
+            'On Hold': 'rgba(107, 114, 128, 0.7)', // Gray
+            'Pending Verification': 'rgba(96, 165, 250, 0.7)' // Light Blue
+        };
+        const statusBorderColors = {
+            Closed: 'rgba(16, 185, 129, 1)',
+            WIP: 'rgba(234, 179, 8, 1)',
+            Open: 'rgba(249, 115, 22, 1)',
+            'On Hold': 'rgba(107, 114, 128, 1)',
+            'Pending Verification': 'rgba(96, 165, 250, 1)'
+        };
+
+        // Helper to get the right Tailwind class for priority tags
+        function getPriorityClass(priority) {
+            if (priority === 'High') return 'priority-high';
+            if (priority === 'Medium') return 'priority-medium';
+            if (priority === 'Low') return 'priority-low';
+            return '';
+        }
+
+        // Helper to get the right Tailwind class for status tags
+        function getStatusClass(status) {
+            if (status === 'Closed') return 'status-closed';
+            if (status === 'WIP') return 'status-wip';
+            if (status === 'Open') return 'status-open';
+            if (status === 'On Hold') return 'status-onhold';
+            if (status === 'Pending Verification') return 'status-pending-verification';
+            return '';
+        }
+        
+        // This function fills up our filter dropdowns with unique options from the data
+        function populateFilters() {
+            const priorities = [...new Set(issuesData.map(issue => issue.Priority))].sort();
+            const statuses = [...new Set(issuesData.map(issue => issue.Status))].sort();
+            const categories = [...new Set(issuesData.map(issue => issue.Category))].sort();
+            const organizations = [...new Set(issuesData.map(issue => issue.Organization))].sort();
+            
+            // Collect all unique responsible parties from main issues and subtasks
+            let allResponsibleParties = new Set(issuesData.map(issue => issue["Responsible Party"]));
+            issuesData.forEach(issue => {
+                if (issue.Subtasks) {
+                    issue.Subtasks.forEach(subtask => {
+                        if (subtask.AssignedTo) {
+                            allResponsibleParties.add(subtask.AssignedTo);
+                        }
+                    });
+                }
+            });
+            const responsibleParties = [...allResponsibleParties].sort();
+
+            const priorityFilter = document.getElementById('priorityFilter');
+            const statusFilter = document.getElementById('statusFilter');
+            const categoryFilter = document.getElementById('categoryFilter');
+            const organizationFilter = document.getElementById('organizationFilter');
+            const newIssueLogUpdater = document.getElementById('newIssueLogUpdater'); // For main issue log updater
+            const subtaskAssigneeDropdowns = document.querySelectorAll('.subtask-assigned-to'); // For dynamic subtask rows
+            const subtaskStatusDropdowns = document.querySelectorAll('.subtask-status'); // For dynamic subtask rows
+            const subtaskActionLogUpdaters = document.querySelectorAll('.new-subtask-log-updater'); // For dynamic subtask rows
+            const reminderRecipient = document.getElementById('reminderRecipient'); // For email reminder recipient
+
+
+            // Store current values to restore after repopulating
+            const currentPriority = priorityFilter.value;
+            const currentStatus = statusFilter.value;
+            const currentCategory = categoryFilter.value;
+            const currentOrganization = organizationFilter.value;
+            const currentIssueUpdater = newIssueLogUpdater.value; // Store current main issue updater selection
+            const currentReminderRecipient = reminderRecipient ? reminderRecipient.value : 'all'; // Store current reminder recipient
+
+
+            // Clear existing options before repopulating
+            priorityFilter.innerHTML = '<option value="">All</option>';
+            statusFilter.innerHTML = '<option value="">All</option>';
+            categoryFilter.innerHTML = '<option value="">All</option>';
+            organizationFilter.innerHTML = '<option value="">All</option>';
+            newIssueLogUpdater.innerHTML = '<option value="">Select Updater</option>'; // Clear for main issue log updater
+            if (reminderRecipient) { // Check if element exists before modifying
+                reminderRecipient.innerHTML = '<option value="all">All Responsible Parties</option>'; // Clear for reminder recipient
+            }
+
+
+            priorities.forEach(p => { const opt = document.createElement('option'); opt.value = p; opt.textContent = p; priorityFilter.appendChild(opt); });
+            statuses.forEach(s => { const opt = document.createElement('option'); opt.value = s; opt.textContent = s; statusFilter.appendChild(opt); });
+            categories.forEach(c => { const opt = document.createElement('option'); opt.textContent = c; categoryFilter.appendChild(opt); });
+            organizations.forEach(o => { const opt = document.createElement('option'); opt.value = o; opt.textContent = o; organizationFilter.appendChild(opt); });
+            
+            // Populate dropdowns for main issue log updater and reminder recipient
+            responsibleParties.forEach(rp => { 
+                const opt = document.createElement('option'); opt.value = rp; opt.textContent = rp; newIssueLogUpdater.appendChild(opt); 
+                if (reminderRecipient) { // Check if element exists before modifying
+                    const reminderOpt = document.createElement('option'); reminderOpt.value = rp; reminderOpt.textContent = rp; reminderRecipient.appendChild(reminderOpt);
+                }
+            });
+
+            // Also update any existing subtask assignee dropdowns
+            subtaskAssigneeDropdowns.forEach(dropdown => {
+                const currentSubtaskAssignee = dropdown.value;
+                dropdown.innerHTML = '<option value="">Select Person</option>';
+                responsibleParties.forEach(rp => {
+                    const opt = document.createElement('option'); opt.value = rp; opt.textContent = rp; dropdown.appendChild(opt);
+                });
+                dropdown.value = currentSubtaskAssignee; // Restore previous selection
+            });
+
+            // Also update any existing subtask status dropdowns
+            subtaskStatusDropdowns.forEach(dropdown => {
+                const currentSubtaskStatus = dropdown.value;
+                dropdown.innerHTML = '<option value="">Select Status</option>';
+                Object.keys(statusColors).forEach(s => { // Use statusColors keys for options
+                    const opt = document.createElement('option'); opt.value = s; opt.textContent = s; dropdown.appendChild(opt);
+                });
+                dropdown.value = currentSubtaskStatus; // Restore previous selection
+            });
+
+            // Also update any existing subtask action log updater dropdowns
+            subtaskActionLogUpdaters.forEach(dropdown => {
+                const currentSubtaskUpdater = dropdown.value;
+                dropdown.innerHTML = '<option value="">Select Updater</option>';
+                responsibleParties.forEach(rp => {
+                    const opt = document.createElement('option'); opt.value = rp; opt.textContent = rp; dropdown.appendChild(opt);
+                });
+                dropdown.value = currentSubtaskUpdater; // Restore previous selection
+            });
+
+
+            // Set the current filter values back after repopulating
+            priorityFilter.value = currentPriority;
+            statusFilter.value = currentStatus;
+            categoryFilter.value = currentCategory;
+            organizationFilter.value = currentOrganization;
+            newIssueLogUpdater.value = currentIssueUpdater; // Restore main issue updater selection
+            if (reminderRecipient) { // Check if element exists before modifying
+                reminderRecipient.value = currentReminderRecipient; // Restore reminder recipient selection
+            }
+        }
+
+        // This function draws (or re-draws) our main issues table
+        function renderTable(filteredData) {
+            const tableBody = document.getElementById('issuesTableBody');
+            const noResultsDiv = document.getElementById('noResults');
+            tableBody.innerHTML = ''; // Clear out old rows first!
+
+            if (filteredData.length === 0) {
+                noResultsDiv.style.display = 'block'; // Show the "no results" message
+                return;
+            }
+            noResultsDiv.style.display = 'none'; // Hide it if we have results
+
+            // Loop through our filtered data and add a row for each issue
+            filteredData.forEach(issue => {
+                const row = tableBody.insertRow();
+                row.className = 'hover:bg-slate-50'; // Add hover class
+
+                // Add expand/collapse button cell
+                const expandCollapseCell = row.insertCell();
+                if (issue.Subtasks && issue.Subtasks.length > 0) {
+                    const toggleBtn = document.createElement('button');
+                    toggleBtn.className = 'toggle-subtasks-btn text-blue-500 hover:text-blue-700 font-bold text-lg px-2';
+                    toggleBtn.textContent = '+'; // Initial state: collapsed
+                    toggleBtn.onclick = (e) => {
+                        e.stopPropagation(); // Prevent row click from opening modal
+                        const subtaskRow = row.nextElementSibling; // Get the next row (which should be the subtask row)
+                        if (subtaskRow && subtaskRow.classList.contains('subtask-detail-row')) {
+                            subtaskRow.classList.toggle('hidden');
+                            toggleBtn.textContent = subtaskRow.classList.contains('hidden') ? '+' : '−';
+                        }
+                    };
+                    expandCollapseCell.appendChild(toggleBtn);
+                } else {
+                    expandCollapseCell.textContent = ''; // Empty cell if no subtasks
+                }
+
+                // Add main issue cells (clickable to open modal)
+                const mainIssueCells = [
+                    issue["Issue ID"],
+                    `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getPriorityClass(issue.Priority)}">${issue.Priority}</span>`,
+                    issue["Task Description"],
+                    `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusClass(issue.Status)}">${issue.Status}</span>`,
+                    issue["Responsible Party"],
+                    issue["Date Opened"],
+                    issue["Target Date"] || 'N/A'
+                ];
+
+                mainIssueCells.forEach((content, index) => {
+                    const cell = row.insertCell();
+                    cell.innerHTML = content;
+                    if (index === 2) { // Task Description cell
+                        cell.className = 'table-cell-truncate';
+                        cell.title = issue["Task Description"];
+                    }
+                    // Add click listener to main issue cells (not the toggle button)
+                    cell.addEventListener('click', (e) => {
+                        // Only open modal if the click wasn't on the toggle button itself
+                        if (!e.target.classList.contains('toggle-subtasks-btn')) {
+                            openModal(issue);
+                        }
+                    });
+                });
+
+                // Add subtask detail row (hidden by default)
+                if (issue.Subtasks && issue.Subtasks.length > 0) {
+                    const subtaskDetailRow = tableBody.insertRow();
+                    subtaskDetailRow.className = 'subtask-detail-row hidden'; // Hidden by default
+                    const subtaskCell = subtaskDetailRow.insertCell();
+                    subtaskCell.colSpan = row.cells.length; // Span across all columns of the main row
+
+                    let subtaskHtml = `<div class="p-2">
+                        <h4 class="font-semibold text-slate-700 mb-2">Sub-tasks:</h4>
+                        <div class="subtask-grid">`; // Use the new subtask-grid class
+                    
+                    issue.Subtasks.forEach((subtask, subIndex) => {
+                        subtaskHtml += `
+                            <div class="subtask-card">
+                                <p class="font-medium">Sub-task ID: ${subtask.ID || 'N/A'}</p>
+                                <p><strong>Description:</strong> ${subtask.Description || 'N/A'}</p>
+                                <p><strong>Assigned To:</strong> ${subtask.AssignedTo || 'N/A'}</p>
+                                <p><strong>Status:</strong> <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusClass(subtask.Status)}">${subtask.Status || 'N/A'}</span></p>
+                                <p><strong>Start Date:</strong> ${subtask.StartDate || 'N/A'}</p>
+                                <p><strong>Target Date:</strong> ${subtask.TargetDate || 'N/A'}</p>
+                            </div>
+                        `;
+                    });
+                    subtaskHtml += `</div></div>`;
+                    subtaskCell.innerHTML = subtaskHtml;
+                }
+            });
+        }
+        
+        // Updates the little sort icons next to column headers
+        function updateSortIcons() {
+            // Adjust query selector to skip the first (empty) column
+            document.querySelectorAll('#issuesTableSection th:not(:first-child) .sort-icon').forEach(icon => icon.textContent = ''); 
+            const activeTh = document.querySelector(`#issuesTableSection th[data-sort="${sortState.column}"]`);
+            if (activeTh) {
+                activeTh.querySelector('.sort-icon').textContent = sortState.direction === 'asc' ? '▲' : '▼'; // Set arrow based on sort direction
+            }
+        }
+
+        // This is the big kahuna! It filters and sorts our issues data
+        function applyFiltersAndSort() {
+            let filtered = [...issuesData]; // Start with a fresh copy of all issues
+
+            // Apply filters one by one
+            if (currentFilters.priority) {
+                filtered = filtered.filter(issue => issue.Priority === currentFilters.priority);
+            }
+            if (currentFilters.status) {
+                filtered = filtered.filter(issue => issue.Status === currentFilters.status);
+            }
+            if (currentFilters.category) {
+                filtered = filtered.filter(issue => issue.Category === currentFilters.category);
+            }
+            if (currentFilters.organization) {
+                filtered = filtered.filter(issue => issue.Organization === currentFilters.organization);
+            }
+            if (currentFilters.search) {
+                const searchTerm = currentFilters.search.toLowerCase();
+                filtered = filtered.filter(issue => 
+                    (issue["Task Description"] && issue["Task Description"].toLowerCase().includes(searchTerm)) ||
+                    (issue["Applicable Part(s)"] && issue["Applicable Part(s)"].toLowerCase().includes(searchTerm))
+                );
+            }
+            
+            // Now, let's sort 'em out!
+            filtered.sort((a, b) => {
+                let valA = a[sortState.column];
+                let valB = b[sortState.column];
+
+                // Make sure strings are lowercase for proper sorting
+                if (typeof valA === 'string') valA = valA.toLowerCase();
+                if (typeof valB === 'string') valB = valB.toLowerCase();
+                
+                // Special handling for date columns
+                if (sortState.column === 'Date Opened' || sortState.column === 'Target Date' || sortState.column === 'Actual Closure Date') {
+                    valA = valA ? new Date(valA) : new Date(0); // Treat empty dates as very early for sorting
+                    valB = valB ? new Date(valB) : new Date(0);
+                }
+                // Special handling for priority sorting (High > Medium > Low)
+                if (sortState.column === 'Priority') {
+                    const priorityOrder = { 'High': 3, 'Medium': 2, 'Low': 1 };
+                    valA = priorityOrder[a.Priority] || 0; // Assign a numerical value for sorting
+                    valB = priorityOrder[b.Priority] || 0;
+                }
+
+                if (valA < valB) return sortState.direction === 'asc' ? -1 : 1;
+                if (valA > valB) return sortState.direction === 'asc' ? 1 : -1;
+                return 0; // If values are equal
+            });
+
+            displayedIssues = filtered; // Store the filtered and sorted list globally
+
+            renderTable(displayedIssues); // Update the table with the newly filtered and sorted data
+            updateSortIcons(); // Make sure our sort arrows are pointing the right way!
+            // Only render Gantt if its tab is active, otherwise it will be rendered when tab is switched
+            if (currentActiveTab === 'ganttChartSection') {
+                renderGanttChart(displayedIssues, ganttFocusDate, ganttTimeSpanWeeks);
+            }
+            renderDailyReviewReport(displayedIssues); // Render the daily review report
+            updateNavigationButtons(); // Update navigation button states
+        }
+
+        // This function sets up and updates our awesome charts!
+        function setupCharts() {
+            // Count issues for each priority
+            const priorityData = issuesData.reduce((acc, issue) => {
+                acc[issue.Priority] = (acc[issue.Priority] || 0) + 1;
+                return acc;
+            }, {});
+            // Count issues for each status
+            const statusData = issuesData.reduce((acc, issue) => { 
+                acc[issue.Status] = (acc[issue.Status] || 0) + 1;
+                return acc;
+            }, {});
+            // Count issues for each category
+            const categoryData = issuesData.reduce((acc, issue) => {
+                acc[issue.Category] = (acc[issue.Category] || 0) + 1;
+                return acc;
+            }, {});
+
+            // Priority Chart (Doughnut)
+            if (priorityChartInstance) priorityChartInstance.destroy(); // Destroy old chart if it exists
+            priorityChartInstance = new Chart(document.getElementById('priorityChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(priorityData),
+                    datasets: [{
+                        data: Object.values(priorityData),
+                        backgroundColor: Object.keys(priorityData).map(p => priorityColors[p] || 'rgba(200, 200, 200, 0.7)'),
+                        borderColor: Object.keys(priorityData).map(p => priorityBorderColors[p] || 'rgba(200, 200, 200, 1)'),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, // Make it responsive!
+                    onClick: (event, elements) => { // Click on a slice to filter!
+                        if (elements.length > 0) {
+                            const chart = elements[0].chart;
+                            const clickedLabel = chart.data.labels[elements[0].index];
+                            document.getElementById('priorityFilter').value = clickedLabel; // Update the filter dropdown
+                            currentFilters.priority = clickedLabel;
+                            applyFiltersAndSort(); // Re-render the table
+                        }
+                    },
+                    plugins: { legend: { position: 'bottom' } } // Legend at the bottom
+                }
+            });
+
+            // Status Chart (Horizontal Bar)
+            if (statusChartInstance) statusChartInstance.destroy(); // Destroy old chart if it exists
+            statusChartInstance = new Chart(document.getElementById('statusChart'), {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(statusData),
+                    datasets: [{
+                        label: 'Issue Count',
+                        data: Object.values(statusData),
+                        backgroundColor: Object.keys(statusData).map(s => statusColors[s] || 'rgba(200, 200, 200, 0.7)'),
+                        borderColor: Object.keys(statusData).map(s => statusBorderColors[s] || 'rgba(200, 200, 200, 1)'),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, indexAxis: 'y', // Make it responsive and horizontal!
+                    onClick: (event, elements) => { // Click on a bar to filter!
+                        if (elements.length > 0) {
+                            const chart = elements[0].chart;
+                            const clickedLabel = chart.data.labels[elements[0].index];
+                            document.getElementById('statusFilter').value = clickedLabel; // Update the filter dropdown
+                            currentFilters.status = clickedLabel;
+                            applyFiltersAndSort(); // Re-render the table
+                        }
+                    },
+                    scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }, // X-axis starts at zero
+                    plugins: { legend: { display: false } } // No legend needed for single bar set
+                }
+            });
+            
+            // Category Chart (Vertical Bar)
+            const categoryLabels = Object.keys(categoryData);
+            const categoryValues = Object.values(categoryData);
+
+            if (categoryChartInstance) categoryChartInstance.destroy(); // Destroy old chart if it exists
+            categoryChartInstance = new Chart(document.getElementById('categoryChart'), {
+                type: 'bar',
+                data: {
+                    labels: categoryLabels,
+                    datasets: [{
+                        label: 'Issue Count',
+                        data: categoryValues,
+                        backgroundColor: 'rgba(34, 197, 94, 0.7)', // Tailwind green-500
+                        borderColor: 'rgba(34, 197, 94, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, // Make it responsive!
+                    onClick: (event, elements) => { // Click on a bar to filter!
+                        if (elements.length > 0) {
+                            const chart = elements[0].chart;
+                            const clickedLabel = chart.data.labels[elements[0].index];
+                            document.getElementById('categoryFilter').value = clickedLabel; // Update the filter dropdown
+                            currentFilters.category = clickedLabel;
+                            applyFiltersAndSort(); // Re-render the table
+                        }
+                    },
+                    scales: {
+                        x: { beginAtZero: true, ticks: { stepSize: 1 } }, // X-axis starts at zero
+                    },
+                    plugins: { legend: { display: false } } // No legend needed
+                }
+            });
+        }
+
+        // Function to render the Gantt chart using Plotly.js
+        function renderGanttChart(filteredData, focusDate = null, timeSpanWeeks = 4) {
+            const ganttData = [];
+            const noGanttResultsDiv = document.getElementById('noGanttResults');
+
+            // Determine the center date for the view
+            const centerDate = focusDate ? new Date(focusDate) : new Date();
+            centerDate.setHours(0, 0, 0, 0); // Normalize to start of day
+
+            // Calculate the range based on timeSpanWeeks
+            const halfSpanDays = (timeSpanWeeks * 7) / 2;
+            const rangeStart = new Date(centerDate);
+            rangeStart.setDate(centerDate.getDate() - halfSpanDays);
+            const rangeEnd = new Date(centerDate);
+            rangeEnd.setDate(centerDate.getDate() + halfSpanDays);
+
+            // Sort issues by Date Opened for better Gantt visualization
+            const sortedFilteredData = [...filteredData].sort((a, b) => {
+                const dateA = new Date(a["Date Opened"]);
+                const dateB = new Date(b["Date Opened"]);
+                return dateA - dateB;
+            });
+
+            sortedFilteredData.forEach(issue => {
+                const startDate = issue["Date Opened"];
+                let endDate = issue["Actual Closure Date"] || issue["Target Date"];
+
+                // If no explicit end date and issue is still open/WIP, estimate 30 days duration
+                if (!endDate && (issue.Status === 'Open' || issue.Status === 'WIP' || issue.Status === 'Pending Verification')) {
+                    const d = new Date(startDate);
+                    d.setDate(d.getDate() + 30); // Add 30 days
+                    endDate = d.toISOString().split('T')[0];
+                }
+
+                if (startDate && endDate) {
+                    ganttData.push({
+                        x: [startDate, endDate],
+                        // Format Y-axis label to include Responsible Party
+                        y: [`Issue ${issue["Issue ID"]} - ${issue["Responsible Party"]}: ${issue["Task Description"]}`],
+                        type: 'scatter',
+                        mode: 'lines',
+                        line: {
+                            color: statusColors[issue.Status] || 'rgba(128, 128, 128, 0.7)', // Default gray
+                            width: 20 // Thickness of the bar
+                        },
+                        name: issue.Status, // For legend
+                        hoverinfo: 'text',
+                        text: `<b>Issue ID:</b> ${issue["Issue ID"]}<br><b>Description:</b> ${issue["Task Description"]}<br><b>Status:</b> ${issue.Status}<br><b>Responsible:</b> ${issue["Responsible Party"]}<br><b>Opened:</b> ${issue["Date Opened"]}<br><b>Target/Actual:</b> ${issue["Target Date"] || issue["Actual Closure Date"] || 'N/A'}`
+                    });
+                }
+            });
+
+            if (ganttData.length === 0) {
+                noGanttResultsDiv.style.display = 'block';
+                Plotly.newPlot('ganttChartContainer', [], {}); // Clear any existing chart
+                return;
+            }
+            noGanttResultsDiv.style.display = 'none';
+
+            // Group bars by status for better legend representation
+            const groupedGanttData = Object.keys(statusColors).map(status => {
+                return {
+                    x: ganttData.filter(d => d.name === status).flatMap(d => d.x),
+                    y: ganttData.filter(d => d.name === status).flatMap(d => d.y),
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: {
+                        color: statusColors[status],
+                        width: 20
+                    },
+                    name: status,
+                    hoverinfo: 'text',
+                    text: ganttData.filter(d => d.name === status).flatMap(d => d.text)
+                };
+            }).filter(group => group.x.length > 0); // Only include groups with data
+
+            const layout = {
+                title: 'Issue Timelines by Status',
+                hovermode: 'closest',
+                showlegend: true,
+                xaxis: {
+                    type: 'date',
+                    title: 'Date',
+                    range: [rangeStart.toISOString().split('T')[0], rangeEnd.toISOString().split('T')[0]] // Apply calculated range
+                },
+                yaxis: {
+                    automargin: true,
+                    autorange: 'reversed', // Display tasks from top to bottom
+                    title: 'Issue'
+                },
+                margin: { l: 150, r: 50, t: 80, b: 80 }, // Adjust margins for y-axis labels
+                height: document.getElementById('ganttChartContainer').offsetHeight,
+                width: document.getElementById('ganttChartContainer').offsetWidth,
+                responsive: true,
+                paper_bgcolor: 'rgba(0,0,0,0)', // Transparent background
+                plot_bgcolor: 'rgba(0,0,0,0)' // Transparent plot area
+            };
+
+            Plotly.newPlot('ganttChartContainer', groupedGanttData, layout, { responsive: true, displayModeBar: false });
+        }
+
+        // Function to render the daily review report
+        function renderDailyReviewReport(data) {
+            const reportContentDiv = document.getElementById('dailyReviewReportContent');
+            const noDailyReviewResultsDiv = document.getElementById('noDailyReviewResults');
+            const reportLimitDisplay = document.getElementById('reportLimitDisplay');
+            const reportLimitDescription = document.getElementById('reportLimitDescription');
+            const reportDateRangeDescription = document.getElementById('reportDateRangeDescription');
+
+            reportContentDiv.innerHTML = ''; // Clear previous content
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0); // Normalize to start of today
+
+            const tomorrow = new Date(today);
+            tomorrow.setDate(today.getDate() + 1);
+
+            const oneWeekFromNow = new Date(today);
+            oneWeekFromNow.setDate(today.getDate() + 7);
+
+            const twoWeeksFromNow = new Date(today);
+            twoWeeksFromNow.setDate(today.getDate() + 14);
+
+            const oneWeekAgo = new Date(today);
+            oneWeekAgo.setDate(today.getDate() - 7);
+
+
+            const actionableStatuses = ['Open', 'WIP', 'Pending Verification'];
+            const priorityOrder = { 'High': 3, 'Medium': 2, 'Low': 1 };
+
+            let filteredIssuesForReport = data.filter(issue => {
+                const targetDate = issue["Target Date"] ? new Date(issue["Target Date"]) : null;
+                if (targetDate) targetDate.setHours(0, 0, 0, 0); // Normalize targetDate to start of day
+
+                if (!actionableStatuses.includes(issue.Status)) {
+                    return false; // Only show open/WIP/pending issues
+                }
+
+                switch (reportDateRange) {
+                    case 'overdue_today':
+                        return targetDate && targetDate <= today;
+                    case 'next_7_days':
+                        return targetDate && targetDate >= tomorrow && targetDate <= oneWeekFromNow;
+                    case 'next_14_days':
+                        return targetDate && targetDate >= tomorrow && targetDate <= twoWeeksFromNow;
+                    case 'last_7_days':
+                        return targetDate && targetDate >= oneWeekAgo && targetDate <= today;
+                    default:
+                        return false; // Should not happen
+                }
+            }).sort((a, b) => {
+                // Sort by Priority first (High > Medium > Low)
+                const priorityCompare = (priorityOrder[b.Priority] || 0) - (priorityOrder[a.Priority] || 0);
+                if (priorityCompare !== 0) return priorityCompare;
+
+                // Then by Target Date (oldest first)
+                const dateA = a["Target Date"] ? new Date(a["Target Date"]) : new Date(0); // Treat no target date as very old
+                const dateB = b["Target Date"] ? new Date(b["Target Date"]) : new Date(0);
+                return dateA - dateB;
+            }).slice(0, reportLimit); // Apply the limit
+
+            reportLimitDisplay.textContent = reportLimit;
+            reportLimitDescription.textContent = reportLimit;
+            reportDateRangeDescription.textContent = document.getElementById('reportDateRangeSelector').options[document.getElementById('reportDateRangeSelector').selectedIndex].text.toLowerCase();
+
+
+            if (filteredIssuesForReport.length === 0) {
+                noDailyReviewResultsDiv.style.display = 'block';
+                return;
+            }
+            noDailyReviewResultsDiv.style.display = 'none';
+
+            filteredIssuesForReport.forEach(issue => {
+                const issueElement = document.createElement('div');
+                issueElement.className = `p-3 rounded-lg shadow-sm cursor-pointer hover:bg-slate-100 ${getPriorityClass(issue.Priority)}`;
+                issueElement.innerHTML = `
+                    <p class="font-semibold text-slate-800">Issue #${issue["Issue ID"]}: ${issue["Task Description"]}</p>
+                    <p class="text-sm text-slate-600">
+                        <span class="font-medium">Priority:</span> ${issue.Priority} |
+                        <span class="font-medium">Status:</span> ${issue.Status} |
+                        <span class="font-medium">Responsible:</span> ${issue["Responsible Party"]} |
+                        <span class="font-medium">Target Date:</span> ${issue["Target Date"] || 'N/A'}
+                    </p>
+                `;
+                issueElement.addEventListener('click', () => openModal(issue));
+                reportContentDiv.appendChild(issueElement);
+            });
+        }
+
+
+        // This function opens up the detailed modal for an issue
+        function openModal(issue) {
+            const modal = document.getElementById('issueModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalContent = document.getElementById('modalContent');
+            const editIssueBtn = document.getElementById('editIssueBtn');
+
+            modalTitle.textContent = `Issue #${issue["Issue ID"]}: ${issue["Task Description"].substring(0, 50)}${issue["Task Description"].length > 50 ? '...' : ''}`;
+            
+            let contentHTML = `<dl class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">`;
+            const fieldsToShow = [
+                "Issue ID", "Priority", "Status", "Category", "Organization", 
+                "Date Opened", "Target Date", "Actual Closure Date", "Responsible Party", "Applicable Part(s)",
+                "Root Cause", "Corrective Action", "Preventive Action"
+            ];
+
+            // Add all the basic fields to the modal
+            fieldsToShow.forEach(key => {
+                contentHTML += `
+                    <div class="col-span-1">
+                        <dt class="font-semibold text-slate-600">${key.replace(/([A-Z])/g, ' $1').trim()}:</dt>
+                        <dd class="mt-1">${issue[key] || 'N/A'}</dd>
+                    </div>
+                `;
+            });
+            contentHTML += `</dl>`;
+
+            // Add the Task Description
+            contentHTML += `<div class="mt-4 col-span-1 md:col-span-2">
+                                <p class="font-semibold text-slate-600">Task Description:</p>
+                                <p class="mt-1 whitespace-pre-wrap">${issue["Task Description"] || 'N/A'}</p>
+                           </div>`;
+            
+            // Add the Action Log, formatted nicely
+            contentHTML += `<div class="mt-4 col-span-1 md:col-span-2">
+                                <p class="font-semibold text-slate-600">Action Log:</p>`;
+            if (issue["Action Log"]) {
+                // Split by newlines to show each log entry on its own line
+                const logEntries = issue["Action Log"].split('\n').filter(entry => entry.trim() !== '');
+                if (logEntries.length > 0) {
+                     contentHTML += `<ul class="list-disc list-inside mt-1 space-y-1">`;
+                     logEntries.forEach(entry => {
+                         contentHTML += `<li class="whitespace-pre-wrap">${entry}</li>`;
+                     });
+                     contentHTML += `</ul>`;
+                } else {
+                    contentHTML += `<p class="mt-1">N/A</p>`;
+                }
+            } else {
+                contentHTML += `<p class="mt-1">N/A</p>`;
+            }
+            contentHTML += `</div>`;
+
+            // Add Subtasks if they exist
+            if (issue.Subtasks && issue.Subtasks.length > 0) {
+                contentHTML += `<div class="mt-4 col-span-1 md:col-span-2">
+                                    <p class="font-semibold text-slate-600">Sub-tasks:</p>
+                                    <div class="subtask-grid">`; // Use the new subtask-grid class
+                issue.Subtasks.forEach((subtask, subIndex) => {
+                    contentHTML += `
+                        <div class="subtask-card">
+                            <p class="font-medium">Sub-task ID: ${subtask.ID || 'N/A'}</p>
+                            <p><strong>Description:</strong> ${subtask.Description || 'N/A'}</p>
+                            <p><strong>Assigned To:</strong> ${subtask.AssignedTo || 'N/A'}</p>
+                            <p><strong>Status:</strong> <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusClass(subtask.Status)}">${subtask.Status || 'N/A'}</span></p>
+                            <p><strong>Start Date:</strong> ${subtask.StartDate || 'N/A'}</p>
+                            <p><strong>Target Date:</strong> ${subtask.TargetDate || 'N/A'}</p>
+                            <p class="mt-2"><strong>Action Log:</strong></p>
+                            <div class="bg-slate-50 p-2 rounded text-xs max-h-24 overflow-y-auto">${formatActionLogForDisplay(subtask["Action Log"])}</div>
+                        </div>
+                    `;
+                });
+                contentHTML += `</div></div>`;
+            }
+
+            // Add Supporting Documentation Link if available
+            if (issue["Supporting Documentation/Image Link"]) {
+                contentHTML += `<div class="mt-4 col-span-1 md:col-span-2">
+                                    <p class="font-semibold text-slate-600">Supporting Documentation:</p>
+                                    <a href="${issue["Supporting Documentation/Image Link"]}" target="_blank" class="text-sky-600 hover:underline mt-1 block">View Document</a>
+                               </div>`;
+            }
+
+            modalContent.innerHTML = contentHTML;
+            modal.classList.add('active'); // Show the modal!
+
+            // Set up the Edit button to pass the current issue data
+            editIssueBtn.onclick = () => startEditIssue(issue);
+        }
+
+        // Helper function to format action log for display
+        function formatActionLogForDisplay(logContent) {
+            if (!logContent) return 'N/A';
+            const entries = logContent.split('\n').filter(entry => entry.trim() !== '');
+            if (entries.length === 0) return 'N/A';
+            return `<ul>${entries.map(entry => `<li>${entry}</li>`).join('')}</ul>`;
+        }
+
+        // This function closes the modal
+        function closeModal() {
+            document.getElementById('issueModal').classList.remove('active');
+        }
+
+        // Function to clear the add issue form
+        function clearAddIssueForm() {
+            document.getElementById('newIssueID').value = ''; // Clear ID for new issues
+            document.getElementById('newPriority').value = '';
+            document.getElementById('newApplicableParts').value = '';
+            document.getElementById('newOrganization').value = '';
+            document.getElementById('newCategory').value = '';
+            document.getElementById('newDateOpened').value = new Date().toISOString().split('T')[0]; // Set to today's date
+            document.getElementById('newResponsibleParty').value = '';
+            document.getElementById('newTaskDescription').value = '';
+            document.getElementById('newTargetDate').value = '';
+            document.getElementById('newActualClosureDate').value = '';
+            document.getElementById('newStatus').value = '';
+            document.getElementById('newSupportingDocLink').value = '';
+            document.getElementById('newRootCause').value = '';
+            document.getElementById('newCorrectiveAction').value = '';
+            document.getElementById('newPreventiveAction').value = '';
+            document.getElementById('issueActionLogHistory').value = ''; // Clear main issue action log history
+            document.getElementById('newIssueLogDate').value = new Date().toISOString().split('T')[0]; // Reset new main log date
+            document.getElementById('newIssueLogUpdater').value = ''; // Clear main log updater selection
+            document.getElementById('newIssueLogComment').value = ''; // Clear new main log comment
+            
+            // Clear all dynamically added subtask fields
+            document.getElementById('subtasksContainer').innerHTML = '';
+        }
+
+        // Function to populate the form for editing an issue
+        function populateFormForEdit(issue) {
+            document.getElementById('newIssueID').value = issue["Issue ID"];
+            document.getElementById('newPriority').value = issue.Priority;
+            document.getElementById('newApplicableParts').value = issue["Applicable Part(s)"];
+            document.getElementById('newOrganization').value = issue.Organization;
+            document.getElementById('newCategory').value = issue.Category;
+            document.getElementById('newDateOpened').value = issue["Date Opened"];
+            document.getElementById('newResponsibleParty').value = issue["Responsible Party"];
+            document.getElementById('newTaskDescription').value = issue["Task Description"];
+            document.getElementById('newTargetDate').value = issue["Target Date"];
+            document.getElementById('newActualClosureDate').value = issue["Actual Closure Date"];
+            document.getElementById('newStatus').value = issue.Status;
+            document.getElementById('newSupportingDocLink').value = issue["Supporting Documentation/Image Link"];
+            document.getElementById('newRootCause').value = issue["Root Cause"];
+            document.getElementById('newCorrectiveAction').value = issue["Corrective Action"];
+            document.getElementById('newPreventiveAction').value = issue["Preventive Action"];
+            document.getElementById('issueActionLogHistory').value = issue["Action Log"]; // Load full action log history
+            document.getElementById('newIssueLogDate').value = new Date().toISOString().split('T')[0]; // Reset new main log date to today
+            document.getElementById('newIssueLogUpdater').value = issue["Responsible Party"]; // Pre-select updater to responsible party
+            document.getElementById('newIssueLogComment').value = ''; // Clear new main log comment
+
+            // Populate subtasks for editing
+            document.getElementById('subtasksContainer').innerHTML = ''; // Clear existing subtasks
+            if (issue.Subtasks) { // Ensure Subtasks property exists
+                issue.Subtasks.forEach(subtask => addSubtaskField(subtask));
+            }
+            populateFilters(); // Re-populate dropdowns for subtasks and main log updater
+            updateNavigationButtons(); // Update button states after populating form
+        }
+
+        // Starts the edit process
+        function startEditIssue(issue) {
+            isEditing = true;
+            editingIssueId = issue["Issue ID"];
+            currentIndexInEdit = displayedIssues.findIndex(i => i["Issue ID"] === issue["Issue ID"]); // Get current index in displayed list
+
+            closeModal(); // Close the detail modal
+            populateFormForEdit(issue); // Fill the form with issue data
+            document.getElementById('addIssueForm').classList.add('active'); // Show the form
+            document.getElementById('saveOrUpdateIssueBtn').textContent = 'Update Issue!'; // Change button text
+            document.getElementById('newIssueID').readOnly = true; // Make ID read-only during edit
+            document.getElementById('newIssueID').classList.add('bg-slate-100', 'cursor-not-allowed');
+        }
+
+        // Function to handle adding or updating an issue
+        async function handleFormSubmission(event) { // Made async
+            event.preventDefault(); // Stop the form from submitting normally
+
+            // Get values from the form
+            const issueData = {
+                "Priority": document.getElementById('newPriority').value,
+                "Applicable Part(s)": document.getElementById('newApplicableParts').value,
+                "Organization": document.getElementById('newOrganization').value,
+                "Category": document.getElementById('newCategory').value,
+                "Date Opened": document.getElementById('newDateOpened').value,
+                "Task Description": document.getElementById('newTaskDescription').value,
+                "Responsible Party": document.getElementById('newResponsibleParty').value,
+                "Target Date": document.getElementById('newTargetDate').value,
+                "Actual Closure Date": document.getElementById('newActualClosureDate').value,
+                "Status": document.getElementById('newStatus').value,
+                "Supporting Documentation/Image Link": document.getElementById('newSupportingDocLink').value,
+                "Root Cause": document.getElementById('newRootCause').value,
+                "Corrective Action": document.getElementById('newCorrectiveAction').value,
+                "Preventive Action": document.getElementById('newPreventiveAction').value
+            };
+
+            // Basic validation (more robust validation can be added)
+            if (!issueData.Priority || !issueData.Organization || !issueData.Category || !issueData["Date Opened"] || !issueData["Task Description"] || !issueData["Responsible Party"] || !issueData.Status) {
+                console.error('Please fill in all required fields (marked with *)');
+                return;
+            }
+
+            // --- Handle Main Issue Action Log ---
+            let finalIssueActionLog = document.getElementById('issueActionLogHistory').value; // Start with the history
+            const newIssueLogDate = document.getElementById('newIssueLogDate').value;
+            const newIssueLogUpdater = document.getElementById('newIssueLogUpdater').value;
+            const newIssueLogComment = document.getElementById('newIssueLogComment').value.trim();
+
+            if (newIssueLogComment) {
+                const newEntry = `${newIssueLogDate} - ${newIssueLogUpdater || 'System'} - ${newIssueLogComment}`;
+                if (finalIssueActionLog) {
+                    finalIssueActionLog += `\n${newEntry}`;
+                } else {
+                    finalIssueActionLog = newEntry;
+                }
+            }
+            issueData["Action Log"] = finalIssueActionLog;
+
+            // Collect subtask data
+            const subtasks = [];
+            document.querySelectorAll('.subtask-row').forEach((row, subIndex) => {
+                const description = row.querySelector('.subtask-description').value;
+                const assignedTo = row.querySelector('.subtask-assigned-to').value;
+                const startDate = row.querySelector('.subtask-start-date').value;
+                const targetDate = row.querySelector('.subtask-target-date').value;
+                const status = row.querySelector('.subtask-status').value; // Get subtask status
+                const actionLogHistory = row.querySelector('.subtask-action-log-history').value; // Get existing log history
+                const newLogDate = row.querySelector('.new-subtask-log-date').value; // Get new log date
+                const newLogUpdater = row.querySelector('.new-subtask-log-updater').value; // Get new log updater
+                const newLogComment = row.querySelector('.new-subtask-log-comment').value.trim(); // Get new log comment
+
+                let finalSubtaskActionLog = actionLogHistory; // Start with the history for this subtask
+
+                if (newLogComment) { // If there's a new comment, append it
+                    const newEntry = `${newLogDate} - ${newLogUpdater || 'System'} - ${newLogComment}`;
+                    if (finalSubtaskActionLog) {
+                        finalSubtaskActionLog += `\n${newEntry}`; // Append to existing log
+                    } else {
+                        finalSubtaskActionLog = newEntry; // This is the first entry
+                    }
+                }
+
+                if (description && assignedTo && startDate && targetDate && status) { // All required subtask fields
+                    const subtaskID = row.dataset.subtaskId || (isEditing ? `${editingIssueId}.${subIndex + 1}` : `${issueData["Issue ID"]}.${subIndex + 1}`);
+                    subtasks.push({ 
+                        ID: subtaskID, // Assign or preserve ID
+                        Description: description, 
+                        AssignedTo: assignedTo, 
+                        StartDate: startDate, 
+                        TargetDate: targetDate, 
+                        Status: status, 
+                        "Action Log": finalSubtaskActionLog 
+                    });
+                }
+            });
+            issueData.Subtasks = subtasks; // Add subtasks to the issue data
+
+            let actionType = isEditing ? 'update' : 'add';
+            let payload = {
+                action: actionType,
+                issue: issueData,
+                // Pass new log details for main issue to be processed by Apps Script
+                newIssueLogDate: document.getElementById('newIssueLogDate').value,
+                newIssueLogUpdater: document.getElementById('newIssueLogUpdater').value,
+                newIssueLogComment: document.getElementById('newIssueLogComment').value.trim()
+            };
+
+            try {
+                const response = await fetch(APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'text/plain;charset=utf-8', // Apps Script expects text/plain for raw POST data
+                    },
+                    body: JSON.stringify(payload),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                if (result.success) {
+                    alert(result.message);
+                    // Data will be re-fetched by applyFiltersAndSort to get latest IDs and state
+                } else {
+                    alert(`Error: ${result.message}`);
+                    console.error('Apps Script error:', result.message);
+                }
+            } catch (error) {
+                console.error('Error sending data to Google Sheet:', error);
+                alert('Failed to save data. Check console for details. Ensure Apps Script is deployed correctly.');
+            }
+
+            // Reset form and UI state regardless of success (data will be re-fetched)
+            isEditing = false;
+            editingIssueId = null;
+            clearAddIssueForm();
+            document.getElementById('addIssueForm').classList.remove('active');
+            document.getElementById('saveOrUpdateIssueBtn').textContent = 'Save Issue!'; // Reset button text
+            document.getElementById('newIssueID').readOnly = false; // Make ID editable for new issues
+            document.getElementById('newIssueID').classList.remove('bg-slate-100', 'cursor-not-allowed');
+
+            // Re-fetch all data to ensure UI is synchronized with Google Sheet
+            await applyFiltersAndSort(); // Use await to ensure data is fresh before re-rendering
+        }
+
+        // Function to switch tabs
+        function showTab(tabId) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            // Deactivate all tab buttons
+            document.getElementById('showIssuesListBtn').classList.remove('bg-blue-600', 'text-white');
+            document.getElementById('showIssuesListBtn').classList.add('bg-slate-300', 'text-slate-800');
+            document.getElementById('showGanttChartBtn').classList.remove('bg-blue-600', 'text-white');
+            document.getElementById('showGanttChartBtn').classList.add('bg-slate-300', 'text-slate-800');
+
+            // Show the selected tab content
+            document.getElementById(tabId).classList.add('active');
+            currentActiveTab = tabId;
+
+            // Activate the corresponding button
+            if (tabId === 'issuesTableSection') {
+                document.getElementById('showIssuesListBtn').classList.add('bg-blue-600', 'text-white');
+                document.getElementById('showIssuesListBtn').classList.remove('bg-slate-300', 'text-slate-800');
+            } else if (tabId === 'ganttChartSection') {
+                document.getElementById('showGanttChartBtn').classList.add('bg-blue-600', 'text-white');
+                document.getElementById('showGanttChartBtn').classList.remove('bg-slate-300', 'text-slate-800');
+                // Ensure Gantt chart is rendered when its tab is activated
+                renderGanttChart(displayedIssues, ganttFocusDate, ganttTimeSpanWeeks); // Render with current data, filters will apply on applyFiltersAndSort
+            }
+        }
+
+        // Function to add a new subtask input row to the form
+        function addSubtaskField(subtask = {}) {
+            const subtasksContainer = document.getElementById('subtasksContainer');
+            const subtaskRow = document.createElement('div');
+            // Store the subtask ID in a dataset for easy retrieval during form submission
+            subtaskRow.dataset.subtaskId = subtask.ID || ''; 
+            subtaskRow.className = 'subtask-row grid grid-cols-1 md:grid-cols-6 gap-2 items-end p-3 border border-slate-200 rounded-md bg-white'; // Added col for status
+
+            const allResponsibleParties = [...new Set(issuesData.flatMap(issue => [issue["Responsible Party"], ...(issue.Subtasks || []).map(st => st.AssignedTo)]))].filter(Boolean).sort();
+            const allStatuses = Object.keys(statusColors); // Get all status options
+
+            subtaskRow.innerHTML = `
+                <div class="col-span-1">
+                    <label class="block text-xs font-medium text-slate-700">Subtask ID</label>
+                    <input type="text" class="subtask-id mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md text-sm bg-slate-100 cursor-not-allowed" readonly value="${subtask.ID || 'Auto-assigned'}">
+                </div>
+                <div class="col-span-1 md:col-span-1">
+                    <label class="block text-xs font-medium text-slate-700">Description</label>
+                    <input type="text" class="subtask-description mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md text-sm" placeholder="Sub-task description" value="${subtask.Description || ''}">
+                </div>
+                <div class="col-span-1">
+                    <label class="block text-xs font-medium text-slate-700">Assigned To</label>
+                    <select class="subtask-assigned-to mt-1 block w-full pl-3 pr-10 py-2 text-sm border-slate-300 rounded-md">
+                        <option value="">Select Person</option>
+                        ${allResponsibleParties.map(p => `<option value="${p}" ${subtask.AssignedTo === p ? 'selected' : ''}>${p}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="col-span-1">
+                    <label class="block text-xs font-medium text-slate-700">Status</label>
+                    <select class="subtask-status mt-1 block w-full pl-3 pr-10 py-2 text-sm border-slate-300 rounded-md">
+                        <option value="">Select Status</option>
+                        ${allStatuses.map(s => `<option value="${s}" ${subtask.Status === s ? 'selected' : ''}>${s}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="col-span-1">
+                    <label class="block text-xs font-medium text-slate-700">Start Date</label>
+                    <input type="date" class="subtask-start-date mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md text-sm" value="${subtask.StartDate || ''}">
+                </div>
+                <div class="col-span-1 flex items-end">
+                    <div class="w-full">
+                        <label class="block text-xs font-medium text-slate-700">Target Date</label>
+                        <input type="date" class="subtask-target-date mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md text-sm" value="${subtask.TargetDate || ''}">
+                    </div>
+                    <button type="button" class="remove-subtask-btn ml-2 p-1 bg-red-500 hover:bg-red-600 text-white rounded-full text-xs self-center" style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">
+                        &times;
+                    </button>
+                </div>
+                <div class="col-span-full md:col-span-6 mt-2">
+                    <label class="block text-xs font-medium text-slate-700">Sub-task Action Log History</label>
+                    <textarea class="subtask-action-log-history mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md text-sm bg-slate-100 cursor-not-allowed" rows="4" readonly>${subtask["Action Log"] || ''}</textarea>
+                </div>
+                <div class="col-span-full md:col-span-6 mt-2 p-3 border border-slate-300 rounded-md bg-slate-50">
+                    <h5 class="text-sm font-semibold mb-2">Add New Log Entry:</h5>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-700">Date</label>
+                            <input type="date" class="new-subtask-log-date mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md text-sm" value="${new Date().toISOString().split('T')[0]}">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-700">Updated By</label>
+                            <select class="new-subtask-log-updater mt-1 block w-full pl-3 pr-10 py-2 text-sm border-slate-300 rounded-md">
+                                <option value="">Select Updater</option>
+                                ${allResponsibleParties.map(p => `<option value="${p}">${p}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="md:col-span-1">
+                            <label class="block text-xs font-medium text-slate-700">Comment</label>
+                            <textarea class="new-subtask-log-comment mt-1 block w-full pl-3 pr-3 py-2 border border-slate-300 rounded-md text-sm" rows="1" placeholder="New comment..."></textarea>
+                        </div>
+                    </div>
+                </div>
+            `;
+            subtasksContainer.appendChild(subtaskRow);
+
+            // Add event listener for the remove button
+            subtaskRow.querySelector('.remove-subtask-btn').addEventListener('click', () => {
+                subtasksContainer.removeChild(subtaskRow);
+            });
+        }
+
+        // Updates the enabled/disabled state of the Next/Previous buttons
+        function updateNavigationButtons() {
+            const prevBtn = document.getElementById('prevIssueBtn');
+            const nextBtn = document.getElementById('nextIssueBtn');
+
+            if (isEditing && displayedIssues.length > 0) {
+                prevBtn.disabled = (currentIndexInEdit <= 0);
+                nextBtn.disabled = (currentIndexInEdit >= displayedIssues.length - 1);
+            } else {
+                prevBtn.disabled = true;
+                nextBtn.disabled = true;
+            }
+        }
+
+        // Navigates to the previous issue in the displayed list
+        function goToPreviousIssue() {
+            if (currentIndexInEdit > 0) {
+                currentIndexInEdit--;
+                const prevIssue = displayedIssues[currentIndexInEdit];
+                populateFormForEdit(prevIssue);
+                editingIssueId = prevIssue["Issue ID"]; // Update editing ID
+            }
+            updateNavigationButtons();
+        }
+
+        // Navigates to the next issue in the displayed list
+        function goToNextIssue() {
+            if (currentIndexInEdit < displayedIssues.length - 1) {
+                currentIndexInEdit++;
+                const nextIssue = displayedIssues[currentIndexInEdit];
+                populateFormForEdit(nextIssue);
+                editingIssueId = nextIssue["Issue ID"]; // Update editing ID
+            } else {
+                // If at the end, close the form after saving
+                isEditing = false;
+                editingIssueId = null;
+                clearAddIssueForm();
+                document.getElementById('addIssueForm').classList.remove('active');
+                document.getElementById('saveOrUpdateIssueBtn').textContent = 'Save Issue!';
+                document.getElementById('newIssueID').readOnly = false;
+                document.getElementById('newIssueID').classList.remove('bg-slate-100', 'cursor-not-allowed');
+            }
+            updateNavigationButtons();
+        }
+
+        // Function to export all data to a CSV file
+        function exportToCsv() {
+            const mainIssueHeaders = [
+                "Issue ID", "Priority", "Applicable Part(s)", "Organization", "Category",
+                "Date Opened", "Task Description", "Responsible Party", "Action Log",
+                "Target Date", "Actual Closure Date", "Status", "Supporting Documentation/Image Link",
+                "Root Cause", "Corrective Action", "Preventive Action"
+            ];
+            const subtaskHeaders = [
+                "Subtask ID", "Subtask Description", "Subtask Assigned To", "Subtask Status",
+                "Subtask Start Date", "Subtask Target Date", "Subtask Action Log"
+            ];
+
+            // Combine headers for the CSV
+            const headers = [...mainIssueHeaders, ...subtaskHeaders].join(',');
+            let csvContent = headers + '\n';
+
+            issuesData.forEach(issue => {
+                const mainIssueRow = mainIssueHeaders.map(header => {
+                    let value = issue[header] || '';
+                    // Handle special characters and newlines for CSV
+                    if (typeof value === 'string') {
+                        value = value.replace(/"/g, '""'); // Escape double quotes
+                        if (value.includes(',') || value.includes('\n') || value.includes('"')) {
+                            value = `"${value}"`; // Quote if contains comma, newline, or double quote
+                        }
+                    }
+                    return value;
+                }).join(',');
+
+                csvContent += mainIssueRow + '\n';
+
+                if (issue.Subtasks && issue.Subtasks.length > 0) {
+                    issue.Subtasks.forEach(subtask => {
+                        const subtaskRow = mainIssueHeaders.map(header => ''); // Empty cells for main issue columns
+                        
+                        const subtaskValues = subtaskHeaders.map(subHeader => {
+                            let value;
+                            switch (subHeader) {
+                                case "Subtask ID":
+                                    value = subtask.ID || '';
+                                    break;
+                                case "Subtask Description":
+                                    value = subtask.Description || '';
+                                    break;
+                                case "Subtask Assigned To":
+                                    value = subtask.AssignedTo || '';
+                                    break;
+                                case "Subtask Status":
+                                    value = subtask.Status || '';
+                                    break;
+                                case "Subtask Start Date":
+                                    value = subtask.StartDate || '';
+                                    break;
+                                case "Subtask Target Date":
+                                    value = subtask.TargetDate || '';
+                                    break;
+                                case "Subtask Action Log":
+                                    value = subtask["Action Log"] || '';
+                                    break;
+                                default:
+                                    value = '';
+                            }
+                            // Handle special characters and newlines for CSV
+                            if (typeof value === 'string') {
+                                value = value.replace(/"/g, '""'); // Escape double quotes
+                                if (value.includes(',') || value.includes('\n') || value.includes('"')) {
+                                    value = `"${value}"`; // Quote if contains comma, newline, or double quote
+                                }
+                            }
+                            return value;
+                        });
+                        csvContent += subtaskRow.join(',') + ',' + subtaskValues.join(',') + '\n';
+                    });
+                }
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', '1R_MSP_Open_Issues_Tracker.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+
+        // When the page loads, let's get everything ready!
+        document.addEventListener('DOMContentLoaded', async () => { // Made async
+
+            // Initial data load from Google Sheet
+            await applyFiltersAndSort(); // Ensure data is loaded before populating filters/charts
+
+            populateFilters(); // Fill up our filter dropdowns
+            setupCharts(); // Draw our charts
+            // applyFiltersAndSort() is now called once above to load initial data
+            clearAddIssueForm(); // Initialize the form with today's date and clear other fields
+
+            // Set initial tab state
+            showTab('issuesTableSection'); // Default to Issues List tab
+
+            // Add event listeners for our filter dropdowns
+            document.getElementById('priorityFilter').addEventListener('change', (e) => { currentFilters.priority = e.target.value; applyFiltersAndSort(); });
+            document.getElementById('statusFilter').addEventListener('change', (e) => { currentFilters.status = e.target.value; applyFiltersAndSort(); });
+            document.getElementById('categoryFilter').addEventListener('change', (e) => { currentFilters.category = e.target.value; applyFiltersAndSort(); });
+            document.getElementById('organizationFilter').addEventListener('change', (e) => { currentFilters.organization = e.target.value; applyFiltersAndSort(); });
+            document.getElementById('searchInput').addEventListener('input', (e) => { currentFilters.search = e.target.value; applyFiltersAndSort(); });
+
+            // Event listeners for closing the modal
+            document.getElementById('closeModal').addEventListener('click', closeModal);
+            document.getElementById('closeModalFooter').addEventListener('click', closeModal);
+            
+            // Event listeners for sorting table columns
+            document.querySelectorAll('#issuesTableSection th').forEach(th => {
+                th.addEventListener('click', () => {
+                    // Exclude the first column (expand/collapse button) from sorting
+                    if (th.dataset.sort) { 
+                        const column = th.dataset.sort;
+                        if (sortState.column === column) {
+                            // If clicking the same column, just reverse the sort direction
+                            sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+                        } else {
+                            // If clicking a new column, sort it ascending by default
+                            sortState.column = column;
+                            sortState.direction = 'asc';
+                        }
+                        applyFiltersAndSort(); // Re-render the table with new sort order
+                    }
+                });
+            });
+            
+            // Close modal with Escape key
+            window.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape' && document.getElementById('issueModal').classList.contains('active')) {
+                    closeModal();
+                }
+            });
+
+            // Toggle Add Issue Form
+            document.getElementById('toggleAddIssueForm').addEventListener('click', () => {
+                const formSection = document.getElementById('addIssueForm');
+                formSection.classList.toggle('active');
+                if (formSection.classList.contains('active')) {
+                    // When opening for a new issue, ensure it's not in edit mode
+                    isEditing = false;
+                    editingIssueId = null;
+                    currentIndexInEdit = -1; // Reset index
+                    clearAddIssueForm();
+                    document.getElementById('saveOrUpdateIssueBtn').textContent = 'Save Issue!';
+                    document.getElementById('newIssueID').readOnly = false;
+                    document.getElementById('newIssueID').classList.remove('bg-slate-100', 'cursor-not-allowed');
+                    populateFilters(); // Re-populate responsible parties for subtasks when form opens
+                }
+                updateNavigationButtons(); // Update button states when opening/closing form
+            });
+
+            // Handle form submission (now handles both add and and update)
+            document.getElementById('addIssueForm').addEventListener('submit', handleFormSubmission);
+            document.getElementById('cancelAddIssue').addEventListener('click', () => {
+                document.getElementById('addIssueForm').classList.remove('active'); // Hide form on cancel
+                clearAddIssueForm(); // Clear form on cancel
+                isEditing = false; // Reset edit mode
+                editingIssueId = null;
+                currentIndexInEdit = -1; // Reset index
+                document.getElementById('saveOrUpdateIssueBtn').textContent = 'Save Issue!'; // Reset button text
+                document.getElementById('newIssueID').readOnly = false; // Make ID editable for new issues
+                document.getElementById('newIssueID').classList.remove('bg-slate-100', 'cursor-not-allowed');
+                updateNavigationButtons(); // Update button states when canceling
+            });
+
+            // Tab button event listeners
+            document.getElementById('showIssuesListBtn').addEventListener('click', () => showTab('issuesTableSection'));
+            document.getElementById('showGanttChartBtn').addEventListener('click', () => showTab('ganttChartSection'));
+
+            // Gantt date selector logic
+            const ganttDateSelector = document.getElementById('ganttDateSelector');
+            const ganttCustomDateInput = document.getElementById('ganttCustomDateInput');
+            const ganttGoDateBtn = document.getElementById('ganttGoDateBtn');
+            const ganttTimeSpanSelector = document.getElementById('ganttTimeSpanSelector'); // New time span selector
+
+            ganttDateSelector.addEventListener('change', (e) => {
+                const selectedValue = e.target.value;
+                const today = new Date();
+                today.setHours(0, 0, 0, 0); // Normalize to start of day
+
+                ganttCustomDateInput.classList.add('hidden');
+                ganttGoDateBtn.classList.add('hidden');
+
+                if (selectedValue === 'today') {
+                    ganttFocusDate = today.toISOString().split('T')[0];
+                } else if (selectedValue === 'yesterday') {
+                    const yesterday = new Date(today);
+                    yesterday.setDate(today.getDate() - 1);
+                    ganttFocusDate = yesterday.toISOString().split('T')[0];
+                } else if (selectedValue === 'tomorrow') {
+                    const tomorrow = new Date(today);
+                    tomorrow.setDate(today.getDate() + 1);
+                    ganttFocusDate = tomorrow.toISOString().split('T')[0];
+                } else if (selectedValue === 'custom') {
+                    ganttCustomDateInput.classList.remove('hidden');
+                    ganttGoDateBtn.classList.remove('hidden');
+                    ganttFocusDate = null; // Clear focus date until 'Go' is clicked
+                    return;
+                }
+                
+                renderGanttChart(displayedIssues, ganttFocusDate, ganttTimeSpanWeeks); // Re-render with new focus date
+            });
+
+            ganttGoDateBtn.addEventListener('click', () => {
+                const customDate = ganttCustomDateInput.value;
+                if (customDate) {
+                    ganttFocusDate = customDate;
+                    renderGanttChart(displayedIssues, ganttFocusDate, ganttTimeSpanWeeks); // Re-render with custom focus date
+                }
+            });
+
+            // New event listener for time span selector
+            ganttTimeSpanSelector.addEventListener('change', (e) => {
+                ganttTimeSpanWeeks = parseInt(e.target.value);
+                // If no specific focus date is set, center around today's date
+                if (!ganttFocusDate || ganttDateSelector.value === 'today') {
+                     ganttFocusDate = new Date().toISOString().split('T')[0];
+                }
+                renderGanttChart(displayedIssues, ganttFocusDate, ganttTimeSpanWeeks);
+            });
+
+            // Event listener for Add Subtask button
+            document.getElementById('addSubtaskBtn').addEventListener('click', () => addSubtaskField());
+
+            // Event listeners for Next/Previous buttons
+            document.getElementById('prevIssueBtn').addEventListener('click', goToPreviousIssue);
+            document.getElementById('nextIssueBtn').addEventListener('click', goToNextIssue);
+
+            // Export to Excel button listener
+            document.getElementById('exportToExcelBtn').addEventListener('click', exportToCsv);
+
+            // Refresh Daily Report button listener
+            document.getElementById('refreshDailyReportBtn').addEventListener('click', () => {
+                renderDailyReviewReport(displayedIssues); // Re-render the report with current data
+            });
+
+            // Event listener for scheduling email reminder
+            document.getElementById('scheduleReminderBtn').addEventListener('click', scheduleEmailReminder);
+        });
+    </script>
+</body>
+</html>
